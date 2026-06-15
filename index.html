@@ -1,0 +1,1796 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTML 编辑器 — 专为 AI 生成的 HTML 提供快速可视化的二次编辑</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='10' fill='%23111'/%3E%3Ctext x='18' y='26' text-anchor='middle' fill='white' font-size='22' font-weight='900' font-family='Inter,sans-serif'%3EH%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<style>
+:root {
+  --bg:#f3f4f1;
+  --paper:#fbfaf6;
+  --ink:#171717;
+  --muted:#7a7a72;
+  --line:#e3e0d8;
+  --line2:#d4d0c6;
+  --dark:#111111;
+  --accent:#6d5dfc;
+  --accent2:#ff7a45;
+  --radius-sm:10px;
+  --radius:16px;
+  --radius-lg:22px;
+  --radius-xl:28px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  overflow:hidden;
+  color:var(--ink);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif;
+  background:
+    radial-gradient(circle at 16% 8%,rgba(109,93,252,.12),transparent 26%),
+    radial-gradient(circle at 86% 0%,rgba(255,122,69,.10),transparent 28%),
+    linear-gradient(180deg,#faf9f5 0%,#ecebe5 100%);
+}
+
+/* ===== App shell ===== */
+.app{
+  height:100%;
+  padding:14px;
+  display:grid;
+  grid-template-rows:58px 1fr;
+  gap:14px;
+}
+
+/* ===== Topbar ===== */
+.topbar{
+  height:58px;
+  border:1px solid var(--line);
+  border-radius:22px;
+  background:rgba(251,250,246,.78);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 12px 0 18px;
+  box-shadow:0 20px 60px rgba(23,23,23,.06), inset 0 1px 0 rgba(255,255,255,.9);
+  z-index:100;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  min-width:auto;
+}
+.mark{
+  width:34px;height:34px;border-radius:12px;
+  background:var(--dark);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  font-weight:900;
+  font-size:14px;
+  letter-spacing:-.08em;
+  box-shadow:0 10px 26px rgba(0,0,0,.18);
+  flex-shrink:0;
+}
+.brand-text strong{
+  display:block;
+  font-size:14px;
+  letter-spacing:-.03em;
+  white-space:nowrap;
+}
+.brand-text span{
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:2px;
+  white-space:nowrap;
+}
+#editorTools{
+  display:none;
+  align-items:center;
+  gap:6px;
+}
+.tb-btn{
+  height:36px;
+  border-radius:13px;
+  border:1px solid var(--line2);
+  padding:0 14px;
+  font-weight:800;
+  font-size:13px;
+  cursor:pointer;
+  background:#fff;
+  color:var(--ink);
+  font-family:inherit;
+  transition:all .18s;
+  white-space:nowrap;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+.tb-btn:hover{background:#f5f3ed;border-color:#c8c2b7}
+.tb-btn:disabled{opacity:.35;pointer-events:none}
+.tb-btn.dark{
+  border-color:var(--dark);
+  background:var(--dark);
+  color:#fff;
+  box-shadow:0 14px 30px rgba(0,0,0,.18);
+  height:38px;
+  border-radius:14px;
+  padding:0 18px;
+  font-size:14px;
+  font-weight:900;
+}
+.tb-btn.dark:hover{background:#2a2a2a}
+.tb-spacer{flex:1}
+
+/* ===== Main layout ===== */
+.layout{
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 360px;
+  gap:14px;
+}
+
+/* ===== Stage ===== */
+.stage{
+  border:1px solid var(--line);
+  background:rgba(251,250,246,.76);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  box-shadow:0 24px 70px rgba(23,23,23,.07), inset 0 1px 0 rgba(255,255,255,.9);
+  border-radius:28px;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:50px 1fr;
+}
+.stage-head{
+  height:50px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 18px;
+  flex-shrink:0;
+}
+.crumb{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#77746b;
+  font-size:13px;
+  font-weight:800;
+}
+.status{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#77746b;
+  font-size:12px;
+  font-weight:800;
+}
+.status i{
+  width:8px;height:8px;border-radius:99px;background:#21c55d;display:block;
+  box-shadow:0 0 0 5px rgba(33,197,93,.12);
+}
+
+/* ===== Canvas area ===== */
+.canvas-wrap{
+  min-height:0;
+  padding:24px;
+  position:relative;
+  overflow-y:auto;
+  background:
+    linear-gradient(rgba(17,17,17,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(17,17,17,.035) 1px,transparent 1px);
+  background-size:26px 26px;
+}
+
+/* ===== Welcome screen (overlay on canvas) ===== */
+#welcomeScreen{
+  position:absolute;
+  inset:24px;
+  border-radius:30px;
+  background:linear-gradient(180deg,#fff 0%,#f8f6f1 100%);
+  border:1px solid #ddd8ce;
+  box-shadow:0 28px 80px rgba(17,17,17,.10), inset 0 2px 0 rgba(255,255,255,.9);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:10;
+  transition:opacity .35s ease;
+}
+#welcomeScreen.hidden{opacity:0;pointer-events:none}
+
+/* Drop card inside welcome */
+.drop{
+  width:688px;
+  padding:51px 45px 45px;
+  border-radius:45px;
+  text-align:center;
+  position:relative;
+  z-index:1;
+  background:linear-gradient(180deg,#fff 0%,#f6f4ee 100%);
+  border:1px solid #e1ddd2;
+  box-shadow:0 24px 70px rgba(17,17,17,.10), inset 0 1px 0 #fff;
+  transition:border-color .3s,box-shadow .3s;
+}
+.drop.drag-over{
+  border-color:var(--accent);
+  box-shadow:0 24px 70px rgba(17,17,17,.10), inset 0 1px 0 #fff, 0 0 0 6px rgba(109,93,252,.10);
+}
+.drop-icon{
+  width:78px;height:78px;
+  margin:0 auto 22px;
+  border-radius:26px;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  font-size:30px;
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.24),transparent 40%),
+    linear-gradient(135deg,#111 0%,#2a2a2a 100%);
+  box-shadow:0 22px 44px rgba(0,0,0,.22);
+}
+.drop h1{
+  margin:0 auto 36px;
+  font-size:26px;
+  max-width:560px;
+  line-height:1.25;
+  letter-spacing:-.05em;
+  color:var(--ink);
+}
+.drop p{
+  margin:0 auto 22px;
+  color:#77746b;
+  font-size:13px;
+  line-height:1.7;
+  max-width:720px;
+}
+.drop-actions{
+  display:flex;
+  justify-content:center;
+  gap:15px;
+}
+.upload-btn{
+  height:62px;
+  padding:0 42px;
+  border-radius:32px;
+  border:0;
+  background:var(--dark);
+  color:#fff;
+  font-weight:900;
+  font-size:29px;
+  cursor:pointer;
+  font-family:inherit;
+  transition:all .18s;
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+.upload-btn:hover{background:#2a2a2a;transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,0,0,.22)}
+.sample-btn{
+  height:42px;
+  padding:0 20px;
+  border-radius:15px;
+  border:1px solid #ddd8ce;
+  background:#fff;
+  color:var(--ink);
+  font-weight:800;
+  font-size:14px;
+  cursor:pointer;
+  font-family:inherit;
+  transition:all .18s;
+}
+.sample-btn:hover{background:#f5f3ed;border-color:#c8c2b7}
+
+/* ===== Iframe (editing mode) ===== */
+#iframeWrap{
+  min-height:100%;
+  border-radius:30px;
+  overflow:hidden;
+  background:var(--paper);
+  border:1px solid #ddd8ce;
+  box-shadow:0 28px 80px rgba(17,17,17,.10), inset 0 2px 0 rgba(255,255,255,.9);
+}
+#canvasIframe{
+  width:100%;
+  min-height:600px;
+  border:none;
+  display:block;
+}
+
+/* ===== Props panel ===== */
+.props{
+  border:1px solid var(--line);
+  background:rgba(251,250,246,.76);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  box-shadow:0 24px 70px rgba(23,23,23,.07), inset 0 1px 0 rgba(255,255,255,.9);
+  border-radius:28px;
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:58px 1fr;
+}
+.props-head{
+  height:58px;
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 18px;
+  flex-shrink:0;
+}
+.props-head strong{
+  font-size:15px;
+  letter-spacing:-.03em;
+}
+.tag{
+  font-size:12px;
+  color:var(--accent);
+  background:rgba(109,93,252,.10);
+  padding:5px 10px;
+  border-radius:99px;
+  font-weight:900;
+}
+.props-body{
+  padding:18px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+/* Empty state card */
+.empty-card{
+  border-radius:24px;
+  border:1px solid #e4dfd5;
+  background:linear-gradient(180deg,#fff,#f6f4ee);
+  padding:20px;
+  box-shadow:0 16px 40px rgba(17,17,17,.06);
+}
+.preview-box{
+  height:96px;
+  border-radius:18px;
+  background:
+    radial-gradient(circle at 30% 20%,rgba(109,93,252,.18),transparent 34%),
+    linear-gradient(135deg,#222,#111);
+  margin-bottom:18px;
+  position:relative;
+  overflow:hidden;
+}
+.preview-box:after{
+  content:"";
+  position:absolute;
+  left:20px;right:20px;bottom:18px;height:8px;
+  border-radius:99px;
+  background:rgba(255,255,255,.22);
+  box-shadow:0 -18px 0 rgba(255,255,255,.12);
+}
+.empty-card h3{
+  margin:0 0 8px;
+  font-size:15px;
+  letter-spacing:-.04em;
+}
+.empty-card p{
+  margin:0;
+  color:#77746b;
+  font-size:12px;
+  line-height:1.7;
+}
+
+/* ===== Dynamic props form elements ===== */
+.props-empty{
+  color:var(--muted);
+  font-size:13px;
+  text-align:center;
+  padding:20px 0;
+  line-height:1.6;
+}
+.prop-group{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding-top:14px;
+  border-top:1px solid #e4dfd5;
+}
+.prop-group:first-child{border-top:none;padding-top:0}
+.prop-label{
+  font-size:11px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.3px;
+  color:var(--muted);
+}
+.prop-input,.prop-textarea,.prop-select{
+  padding:9px 11px;
+  border:1px solid #ded9cf;
+  border-radius:12px;
+  background:#fff;
+  color:var(--ink);
+  font-size:13px;
+  font-family:inherit;
+  outline:none;
+  transition:border-color .18s,box-shadow .18s;
+}
+.prop-input:focus,.prop-textarea:focus,.prop-select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(109,93,252,.08);
+}
+.prop-textarea{resize:vertical;min-height:60px}
+.prop-input[type="color"]{padding:4px 8px;height:38px;cursor:pointer}
+.prop-row{display:flex;gap:8px}
+.prop-row .prop-input{flex:1;min-width:0}
+.prop-row-inner{display:flex;gap:5px;align-items:center;min-width:0}
+.prop-row-inner label{font-size:11px;color:var(--muted);font-weight:800;min-width:14px;flex-shrink:0}
+/* Label-above-input grid for size + padding — one row per control */
+.prop-lbl{display:inline-flex;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:800;color:var(--muted);user-select:none;transition:color .15s;white-space:nowrap;width:36px;flex-shrink:0;cursor:ew-resize;letter-spacing:.5px}
+.prop-lbl:hover{color:var(--accent)}
+.prop-lbl[data-axis="y"]{cursor:ns-resize}
+.prop-lbl .ar{font-size:7px;opacity:.35;font-weight:400}
+.scrub-icon{font-size:13px;color:var(--muted);cursor:ew-resize;user-select:none;transition:color .15s;flex-shrink:0;line-height:1;padding:0 2px}
+.scrub-icon:hover{color:var(--accent)}
+.reset-btn{font-size:11px;cursor:pointer;opacity:.35;transition:opacity .15s;margin-left:2px;user-select:none}
+.reset-btn:hover{opacity:1;color:var(--accent2)}
+.prop-btn{
+  padding:7px 14px;
+  border:1px solid var(--line2);
+  border-radius:12px;
+  background:#fff;
+  color:var(--ink);
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  transition:all .18s;
+  font-family:inherit;
+}
+.prop-btn:hover{background:#f5f3ed;border-color:#c8c2b7}
+.prop-btn.danger{color:var(--accent2);border-color:rgba(255,122,69,.25)}
+.prop-btn.danger:hover{background:var(--accent2);border-color:var(--accent2);color:#fff}
+
+/* Align buttons */
+.align-group{display:flex;gap:2px}
+.align-btn{
+  flex:1;padding:7px;border:1px solid #ded9cf;background:#fff;
+  color:var(--muted);font-size:13px;cursor:pointer;text-align:center;
+  transition:all .18s;font-family:inherit;
+}
+.align-btn:first-child{border-radius:10px 0 0 10px}
+.align-btn:last-child{border-radius:0 10px 10px 0}
+.align-btn:hover{background:#f5f3ed}
+.align-btn.active{background:var(--dark);border-color:var(--dark);color:#fff}
+
+/* ===== Add panel dropdown ===== */
+#addPanel{
+  position:fixed;
+  top:80px;
+  left:200px;
+  background:rgba(251,250,246,.95);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-radius:18px;
+  border:1px solid var(--line);
+  box-shadow:0 20px 50px rgba(23,23,23,.12);
+  padding:8px;
+  display:none;
+  z-index:500;
+  min-width:190px;
+}
+#addPanel.show{display:block}
+.add-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:11px;
+  cursor:pointer;font-size:13px;font-weight:700;
+  transition:background .15s;
+  border:none;background:transparent;color:var(--ink);
+  width:100%;text-align:left;font-family:inherit;
+}
+.add-item:hover{background:rgba(109,93,252,.08);color:var(--accent)}
+
+/* ===== Toast ===== */
+#toast{
+  position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
+  background:var(--dark);color:#fff;
+  padding:10px 24px;border-radius:20px;
+  font-size:13px;font-weight:600;
+  z-index:9999;opacity:0;pointer-events:none;
+  transition:opacity .3s;
+  box-shadow:0 12px 30px rgba(0,0,0,.2);
+}
+#toast.show{opacity:1}
+
+/* ===== Utility ===== */
+.canvas-hidden{display:none !important}
+
+/* ===== Responsive ===== */
+@media(max-width:980px){
+  .layout{grid-template-columns:1fr}
+  .props{display:none}
+  .brand-text span{display:none}
+}
+@media(max-width:600px){
+  .app{padding:8px;gap:8px}
+  .topbar{padding:0 8px 0 12px;border-radius:16px}
+  .tb-btn{padding:0 10px;font-size:12px}
+  .tb-btn span{display:none}
+  .brand-text strong{font-size:12px}
+  .drop{width:auto;padding:24px 18px}
+  .canvas-wrap{padding:12px}
+  #welcomeScreen{inset:12px;border-radius:20px}
+  #iframeWrap{border-radius:20px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== Topbar ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <div class="brand-text">
+        <strong>HTML 编辑器</strong>
+        <span>专为 AI 生成的 HTML 提供快速的二次编辑</span>
+      </div>
+    </div>
+
+    <span id="editorTools" style="margin-left:8px">
+      <button class="tb-btn" id="btnAdd" onclick="toggleAddPanel()">+ <span>添加</span></button>
+      <button class="tb-btn" id="btnUndo" onclick="undo()" disabled>&#8630; <span>撤销</span></button>
+      <button class="tb-btn" id="btnRedo" onclick="redo()" disabled>&#8631; <span>重做</span></button>
+    </span>
+
+    <span class="tb-spacer"></span>
+
+    <div class="actions" style="display:flex;align-items:center;gap:6px">
+      <button class="tb-btn dark" onclick="exportFile()">导出 HTML</button>
+      <button class="tb-btn" onclick="exportPNG()">导出 PNG</button>
+      <button class="tb-btn" onclick="composeImage()">合成图片</button>
+      <button class="tb-btn" onclick="showAbout()" style="font-weight:500">关于</button>
+    </div>
+  </header>
+
+  <!-- ===== Main content ===== -->
+  <main class="layout">
+    <section class="stage">
+      <div class="stage-head">
+        <span id="statusText" style="display:none"></span>
+        <div class="status"><i></i> 自动保存已开启</div>
+      </div>
+
+      <div class="canvas-wrap" id="canvasContainer">
+        <!-- Welcome overlay -->
+        <div id="welcomeScreen">
+          <div class="drop" id="welcomeDropZone">
+
+            <h1>把 HTML 拖进来，开始像设计稿一样编辑</h1>
+
+            <div class="drop-actions">
+              <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('fileInput').click()">导入 HTML</button>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Iframe wrapper (behind welcome screen) -->
+        <div id="iframeWrap">
+          <iframe id="canvasIframe" class="canvas-hidden"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Properties panel ===== -->
+    <aside class="props" id="propsPanel">
+      <div class="props-head">
+        <strong>属性调整</strong>
+        <div style="display:flex;align-items:center;gap:5px">
+          <button class="tb-btn" onclick="undo()" id="btnUndo2" disabled style="font-size:11px;padding:0 7px;height:28px;border-radius:9px;min-width:28px" title="撤销">↶</button>
+          <button class="tb-btn" onclick="redo()" id="btnRedo2" disabled style="font-size:11px;padding:0 7px;height:28px;border-radius:9px;min-width:28px" title="重做">↷</button>
+          <button class="tb-btn" onclick="resetAll()" style="font-size:11px;padding:0 8px;height:28px;border-radius:9px;color:#ff7a45;border-color:rgba(255,122,69,.3);white-space:nowrap" title="一键重置">↺ 重置</button>
+          <span class="tag" id="elementTag">未选择</span>
+        </div>
+      </div>
+      <div class="props-body" id="propsBody">
+        <div class="empty-card">
+          <div class="preview-box"></div>
+          <h3>选择画布中的元素</h3>
+          <p>点击文字、图片、按钮或区块后，可在这里编辑尺寸、颜色、圆角、间距与层级。</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- ===== Overlays & hidden inputs ===== -->
+<div id="addPanel">
+  <button class="add-item" onclick="addElement('heading')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">H</span>标题</button>
+  <button class="add-item" onclick="addElement('text')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">&#182;</span>文本</button>
+  <button class="add-item" onclick="addElement('image')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">&#9638;</span>图片</button>
+  <button class="add-item" onclick="addElement('button')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">&#9633;</span>按钮</button>
+  <button class="add-item" onclick="addElement('divider')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">&#9472;</span>分隔线</button>
+  <button class="add-item" onclick="addElement('container')"><span style="font-size:18px;width:28px;text-align:center;flex-shrink:0">&#9638;</span>容器</button>
+</div>
+
+<div id="toast"></div>
+
+<!-- About modal -->
+<div id="aboutModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;align-items:center;justify-content:center">
+  <div style="background:#fbfaf6;border-radius:24px;padding:32px;max-width:380px;width:90%;text-align:center;box-shadow:0 28px 80px rgba(0,0,0,.18);border:1px solid #e4dfd5">
+    <div style="font-size:48px;margin-bottom:12px">H</div>
+    <h2 style="margin:0 0 8px;font-size:20px;letter-spacing:-.03em">HTML 可视化编辑器</h2>
+    <p style="margin:0 0 20px;color:#77746b;font-size:13px;line-height:1.6">专为 AI 生成的 HTML 提供快速可视化的二次编辑</p>
+    <div style="background:#f3f2ed;border-radius:14px;padding:16px;margin-bottom:20px">
+      <p style="margin:0;font-size:13px;color:#555">作者：<strong>三社</strong></p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555">QQ：<strong style="color:#6d5dfc">1628537085</strong></p>
+      <p style="margin:6px 0 0;font-size:13px;color:#555">开源：<a href="https://github.com/sanshe21/html-editor" target="_blank" style="color:#6d5dfc;text-decoration:none;font-weight:600">github.com/sanshe21/html-editor</a></p>
+    </div>
+    <button onclick="document.getElementById('aboutModal').style.display='none'" style="padding:10px 32px;border-radius:13px;border:1px solid #d4d0c6;background:#fff;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit">关闭</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".html,.htm" hidden onchange="handleFileSelect(event)">
+
+<script>
+/* ========================================================================
+   STATE
+   ======================================================================== */
+let selectedElement = null;
+let undoStack = [];
+let redoStack = [];
+let resizeData = null;
+let editSavedContent = null;
+let handles = [];
+let _toastTimer = null;
+let _mutationObserver = null;
+let _scrubState = null;
+let _moveData = null;
+
+function getTranslate(el) {
+  const t = el.style.transform;
+  if (!t || t === 'none') return { x: 0, y: 0 };
+  const m = t.match(/translate\(([^)]+)\)/);
+  if (!m) return { x: 0, y: 0 };
+  const parts = m[1].split(',').map(s => parseFloat(s) || 0);
+  return { x: parts[0] || 0, y: parts[1] || 0 };
+}
+
+/* ========================================================================
+   IFRAME HELPERS
+   ======================================================================== */
+function getDoc() {
+  const iframe = document.getElementById('canvasIframe');
+  return iframe && iframe.contentDocument;
+}
+function getWin() {
+  const iframe = document.getElementById('canvasIframe');
+  return iframe && iframe.contentWindow;
+}
+function getRoot() {
+  const doc = getDoc();
+  return doc ? (doc.body || doc.documentElement) : null;
+}
+
+/* ========================================================================
+   LOAD HTML INTO IFRAME
+   ======================================================================== */
+function loadHTML(htmlString) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.getElementById('canvasIframe');
+    iframe.onload = () => {
+      try {
+        setupIframeListeners();
+        createHandles();
+        autoSizeIframe();
+        resolve();
+      } catch (e) { reject(e); }
+    };
+    iframe.srcdoc = htmlString;
+  });
+}
+
+function autoSizeIframe() {
+  const doc = getDoc();
+  const iframe = document.getElementById('canvasIframe');
+  const wrap = document.getElementById('canvasContainer');
+  if (!doc || !doc.body) return;
+  const st = wrap.scrollTop;
+  const h = Math.max(600, doc.body.scrollHeight + 80);
+  iframe.style.minHeight = h + 'px';
+  wrap.scrollTop = st;
+}
+
+/* ========================================================================
+   EVENT LISTENERS INSIDE IFRAME
+   ======================================================================== */
+function setupIframeListeners() {
+  const doc = getDoc();
+  if (!doc) return;
+
+  // Click to select (bubbling phase, no capture)
+  doc.addEventListener('click', (e) => {
+    if (resizeData) return;
+    if (editSavedContent !== null) return;
+    if (_justMoved) { _justMoved = false; return; }
+    let el = e.target;
+    // Walk up from text nodes to their parent element
+    while (el && el.nodeType !== 1) el = el.parentElement;
+    if (!el) return;
+    if (el.classList.contains('__ve-handle')) return;
+    if (el === doc.body || el === doc.documentElement) { deselectElement(); return; }
+    if (['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+    if (el.tagName === 'A' || el.closest('a')) { e.preventDefault(); }
+    // Already-selected text element → second click enters edit mode
+    if (el === selectedElement) {
+      if (isTextElement(el)) {
+        const cx = e.clientX, cy = e.clientY;
+        setTimeout(() => startEditAtCursor(el, cx, cy), 0);
+      }
+      return;
+    }
+    selectElement(el);
+  });
+
+  // Mousedown on selected element → prepare drag-to-move (not on handles)
+  doc.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (resizeData) return;
+    if (editSavedContent !== null) return;
+    if (_scrubState) return;
+    _justMoved = false;
+    let el = e.target;
+    while (el && el.nodeType !== 1) el = el.parentElement;
+    if (!el) return;
+    if (el.classList.contains('__ve-handle')) return;
+    if (el === doc.body || el === doc.documentElement) return;
+    if (['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+    if (el === selectedElement) {
+      const tr = getTranslate(el);
+      _moveData = {
+        el: el,
+        startX: e.clientX,
+        startY: e.clientY,
+        startLeft: parseFloat(el.style.left) || 0,
+        startTop: parseFloat(el.style.top) || 0,
+        startTx: tr,
+        moved: false,
+        wasStatic: !el.style.position || el.style.position === 'static'
+      };
+    }
+  });
+
+  // Scroll inside iframe → update handle positions
+  const win = getWin();
+  if (win) {
+    win.addEventListener('scroll', () => {
+      if (selectedElement) showHandles(selectedElement);
+    });
+  }
+
+  // Drag move/up inside iframe — critical for smooth resize (iframe has own event context)
+  doc.addEventListener('mousemove', onDragMove);
+  doc.addEventListener('mouseup', onDragUp);
+
+  // Mutation observer to auto-resize iframe
+  if (doc.body) {
+    if (_mutationObserver) _mutationObserver.disconnect();
+    _mutationObserver = new MutationObserver(() => {
+      if (resizeData) return;
+      autoSizeIframe();
+    });
+    _mutationObserver.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  }
+}
+
+/* ========================================================================
+   HANDLES (inside iframe, position:fixed)
+   ======================================================================== */
+function createHandles() {
+  const doc = getDoc();
+  if (!doc || !doc.body) return;
+  handles.forEach(h => { if (h.parentNode) h.parentNode.removeChild(h); });
+  handles = [];
+
+  const dirs = ['nw','n','ne','e','se','s','sw','w'];
+  const cursorMap = { nw:'nw-resize',n:'n-resize',ne:'ne-resize',e:'e-resize',se:'se-resize',s:'s-resize',sw:'sw-resize',w:'w-resize' };
+  dirs.forEach(dir => {
+    const h = doc.createElement('div');
+    h.className = '__ve-handle';
+    h.setAttribute('style', [
+      'position:fixed','width:10px','height:10px','background:#fff',
+      'border:2px solid #6d5dfc','border-radius:50%','z-index:2147483647',
+      'display:none','pointer-events:auto','cursor:' + cursorMap[dir]
+    ].join(';'));
+    h.dataset.handle = dir;
+    h.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); startResize(e, dir); });
+    doc.body.appendChild(h);
+    handles.push(h);
+  });
+}
+
+function showHandles(el) {
+  if (!el || !el.isConnected) { hideHandles(); return; }
+  // Recreate if handles lost (e.g. after undo)
+  if (handles.length === 0 || !handles[0].isConnected) createHandles();
+
+  const rect = el.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  const l = rect.left, t = rect.top;
+
+  const positions = {
+    nw: [l-5, t-5], n: [l+w/2, t-5], ne: [l+w+5, t-5],
+    e: [l+w+5, t+h/2], se: [l+w+5, t+h+5], s: [l+w/2, t+h+5],
+    sw: [l-5, t+h+5], w: [l-5, t+h/2]
+  };
+
+  handles.forEach(h => {
+    const [x, y] = positions[h.dataset.handle];
+    h.style.left = x + 'px';
+    h.style.top = y + 'px';
+    h.style.display = 'block';
+  });
+}
+
+function hideHandles() {
+  handles.forEach(h => { if (h.isConnected) h.style.display = 'none'; });
+}
+
+/* ========================================================================
+   SELECTION
+   ======================================================================== */
+function selectElement(el) {
+  deselectElement();
+  selectedElement = el;
+  el.style.outline = '2px solid #6d5dfc';
+  el.style.outlineOffset = '2px';
+  el.style.cursor = 'move';
+  showHandles(el);
+  updatePropsPanel(el);
+  document.getElementById('elementTag').textContent = '<' + el.tagName.toLowerCase() + '>';
+  document.getElementById('statusText').textContent = '已选中';
+}
+
+function deselectElement() {
+  if (selectedElement && selectedElement.isConnected) {
+    selectedElement.style.outline = '';
+    selectedElement.style.outlineOffset = '';
+    selectedElement.style.cursor = '';
+  }
+  selectedElement = null;
+  hideHandles();
+  showEmptyProps();
+  document.getElementById('elementTag').textContent = '未选择';
+  document.getElementById('statusText').textContent = '就绪';
+}
+
+/* ========================================================================
+   RESIZE
+   ======================================================================== */
+function startResize(e, dir) {
+  if (!selectedElement) return;
+  const el = selectedElement;
+  const rect = el.getBoundingClientRect();
+
+  resizeData = {
+    el, dir,
+    startX: e.clientX, startY: e.clientY,
+    startW: rect.width, startH: rect.height,
+    startLeft: parseFloat(el.style.left) || 0,
+    startTop: parseFloat(el.style.top) || 0,
+    wasStatic: !el.style.position || el.style.position === 'static',
+    isInline: isInlineText(el)
+  };
+
+  // Inline elements ignore width/height — promote to inline-block during resize
+  if (resizeData.isInline) el.style.display = 'inline-block';
+
+  if (_mutationObserver) try { _mutationObserver.disconnect(); } catch(e) {}
+}
+
+let _resizeRAF = null;
+let _moveRAF = null;
+let _justMoved = false;
+
+// Central drag-move handler — works on BOTH parent and iframe documents
+function onDragMove(e) {
+  // Handle resize drag
+  if (resizeData) {
+    const { el, dir, startX, startY, startW, startH, startLeft, startTop, wasStatic, isInline } = resizeData;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    let newW = startW, newH = startH;
+    let shiftX = 0, shiftY = 0;
+
+    if (dir.includes('e')) newW = Math.max(20, startW + dx);
+    if (dir.includes('w')) { newW = Math.max(20, startW - dx); shiftX = startW - newW; }
+    if (dir.includes('s')) newH = Math.max(20, startH + dy);
+    if (dir.includes('n')) { newH = Math.max(20, startH - dy); shiftY = startH - newH; }
+
+    el.style.width = newW + 'px';
+    el.style.height = newH + 'px';
+
+    // Shift position for w/n handles so the correct edge moves
+    if ((shiftX !== 0 || shiftY !== 0) && wasStatic) el.style.position = 'relative';
+    if (shiftX !== 0) el.style.left = (startLeft + shiftX) + 'px';
+    if (shiftY !== 0) el.style.top = (startTop + shiftY) + 'px';
+
+    if (!_resizeRAF) {
+      _resizeRAF = requestAnimationFrame(() => {
+        _resizeRAF = null;
+        if (resizeData && resizeData.el.isConnected) {
+          showHandles(resizeData.el);
+          updateSizeInputs(
+            parseFloat(resizeData.el.style.width) || resizeData.el.getBoundingClientRect().width,
+            parseFloat(resizeData.el.style.height) || resizeData.el.getBoundingClientRect().height
+          );
+        }
+      });
+    }
+    return;
+  }
+
+  // Handle drag-to-move
+  if (_moveData) {
+    if (!(e.buttons & 1)) { finishMove(); return; }
+    const dx = e.clientX - _moveData.startX;
+    const dy = e.clientY - _moveData.startY;
+    if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && !_moveData.moved) return;
+    if (!_moveData.moved) {
+      _moveData.moved = true;
+      if (_moveData.wasStatic) _moveData.el.style.position = 'relative';
+      // Store original visual state & apply drag feedback
+      const el = _moveData.el;
+      _moveData._savedOutline = el.style.outline;
+      _moveData._savedOutlineOffset = el.style.outlineOffset;
+      _moveData._savedBoxShadow = el.style.boxShadow;
+      _moveData._savedTransition = el.style.transition;
+      _moveData._savedZIndex = el.style.zIndex;
+      el.style.outline = '3px solid #6366f1';
+      el.style.outlineOffset = '4px';
+      el.style.boxShadow = '0 20px 50px rgba(99,102,241,.25), 0 8px 20px rgba(0,0,0,.12)';
+      el.style.transition = 'box-shadow .15s';
+      el.style.zIndex = '999';
+      el.style.cursor = 'grabbing';
+      document.body.style.cursor = 'grabbing';
+      hideHandles();
+    }
+    const el = _moveData.el;
+    el.style.left = (_moveData.startLeft + dx) + 'px';
+    el.style.top = (_moveData.startTop + dy) + 'px';
+    if (!_moveRAF) {
+      _moveRAF = requestAnimationFrame(() => {
+        _moveRAF = null;
+        if (_moveData && _moveData.el.isConnected) showHandles(_moveData.el);
+      });
+    }
+    return;
+  }
+
+  // Handle label scrub
+  if (_scrubState) {
+    if (!(e.buttons & 1)) { finishScrub(); return; }
+    const { input, axis, startX, startY, startVal, unit } = _scrubState;
+    const delta = axis === 'x' ? (e.clientX - startX) : (e.clientY - startY);
+    if (Math.abs(delta) < 3 && !_scrubState.moved) return;
+    _scrubState.moved = true;
+    const step = e.shiftKey ? 10 : 1;
+    let num = Math.max(0, startVal + delta * step);
+    if (unit === 'px') num = Math.round(num);
+    const formatted = unit === 'px' ? num + 'px' : num + unit;
+    input.value = formatted;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function onDragUp() {
+  if (resizeData) {
+    resizeData = null;
+    if (_resizeRAF) { cancelAnimationFrame(_resizeRAF); _resizeRAF = null; }
+    const d = getDoc();
+    if (_mutationObserver && d && d.body) {
+      try { _mutationObserver.observe(d.body, { childList:true, subtree:true, attributes:true, attributeFilter:['style'] }); } catch(e) {}
+    }
+    pushUndo();
+    autoSizeIframe();
+    if (selectedElement) showHandles(selectedElement);
+  }
+  if (_moveData) finishMove();
+  finishScrub();
+}
+
+function finishScrub() {
+  if (!_scrubState) return;
+  const didMove = _scrubState.moved;
+  _scrubState = null;
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  if (didMove) pushUndo();
+}
+
+function finishMove() {
+  if (!_moveData) return;
+  const el = _moveData.el;
+  el.style.cursor = '';
+  document.body.style.cursor = '';
+  if (_moveData.moved) {
+    // Restore visual state
+    el.style.outline = _moveData._savedOutline || '';
+    el.style.outlineOffset = _moveData._savedOutlineOffset || '';
+    el.style.boxShadow = _moveData._savedBoxShadow || '';
+    el.style.transition = _moveData._savedTransition || '';
+    el.style.zIndex = _moveData._savedZIndex || '';
+    _justMoved = true;
+    pushUndo();
+    autoSizeIframe();
+    if (el === selectedElement && el.isConnected) { showHandles(el); el.style.cursor = 'move'; }
+  }
+  _moveData = null;
+  if (_moveRAF) { cancelAnimationFrame(_moveRAF); _moveRAF = null; }
+}
+
+document.addEventListener('mousemove', onDragMove);
+document.addEventListener('mouseup', onDragUp);
+
+/* ========================================================================
+   INLINE TEXT EDITING
+   ======================================================================== */
+function isTextElement(el) {
+  // Elements that should NEVER enter contentEditable mode
+  const noEdit = ['html','head','body','img','br','hr','input','textarea','select','video','audio','canvas','iframe','script','style','svg','object','embed','map','area','source','track'];
+  if (noEdit.includes(el.tagName.toLowerCase())) return false;
+  // Any other element with visible text content is editable
+  return !!(el.textContent && el.textContent.trim());
+}
+
+function isInlineText(el) {
+  try { const w = getWin(); if (!w) return false; return w.getComputedStyle(el).display.startsWith('inline'); }
+  catch(e) { return false; }
+}
+
+// Click-to-edit: place cursor at click position (called via setTimeout to defer past click processing)
+function startEditAtCursor(el, cx, cy) {
+  if (!selectedElement) selectElement(el);
+  hideHandles();
+  el.style.outline = '2px solid #f59e0b';
+  el.style.outlineOffset = '2px';
+  el.contentEditable = 'true';
+  editSavedContent = el.innerHTML;
+
+  const doc = getDoc();
+  el.focus();
+
+  try {
+    const range = doc.caretRangeFromPoint(cx, cy);
+    if (range) {
+      const sel = getWin().getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  } catch(e) {}
+
+  el.addEventListener('blur', onEditBlur);
+  el.addEventListener('keydown', onEditKey);
+}
+
+// Double-click: select all text for quick replacement
+function startEditFull(el) {
+  deselectElement();
+  el.contentEditable = 'true';
+  el.focus();
+  editSavedContent = el.innerHTML;
+
+  const doc = getDoc();
+  const range = doc.createRange();
+  range.selectNodeContents(el);
+  const sel = getWin().getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  el.addEventListener('blur', onEditBlur);
+  el.addEventListener('keydown', onEditKey);
+}
+
+function onEditBlur(e) {
+  const el = e.target;
+  el.removeEventListener('blur', onEditBlur);
+  el.removeEventListener('keydown', onEditKey);
+  commitEdit(el);
+}
+
+function onEditKey(e) {
+  if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); }
+}
+
+function commitEdit(el) {
+  el.contentEditable = 'false';
+  if (el === selectedElement) {
+    el.style.outline = '2px solid #6d5dfc';
+    el.style.outlineOffset = '2px';
+    showHandles(el);
+  } else {
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+  }
+  if (el.innerHTML !== editSavedContent) {
+    editSavedContent = null;
+    pushUndo();
+  }
+  editSavedContent = null;
+  autoSizeIframe();
+}
+
+/* ========================================================================
+   PROPERTIES PANEL
+   ======================================================================== */
+function rgbToHex(color) {
+  if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return '#000000';
+  if (color.startsWith('#')) {
+    if (color.length === 4) return '#' + color[1]+color[1]+color[2]+color[2]+color[3]+color[3];
+    return color;
+  }
+  const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (m) return '#' + [m[1],m[2],m[3]].map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
+  return '#000000';
+}
+
+function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
+function fmtPx(v) { const n = parseFloat(v); return n ? n + 'px' : ''; }
+function fmtPxOr(v, fallback) { const n = parseFloat(v) || parseFloat(fallback); return n ? n + 'px' : ''; }
+
+function updatePropsPanel(el) {
+  if (!el) return;
+  const body = document.getElementById('propsBody');
+  const tag = el.tagName.toLowerCase();
+  const computed = getWin().getComputedStyle(el);
+  const s = el.style;
+
+  let html = '';
+
+  // Delete
+  html += `<button class="prop-btn danger" onclick="deleteSelected()" style="width:100%;margin-bottom:4px">删除元素 &lt;${tag}&gt;</button>`;
+
+  // Type
+  html += `<div class="prop-group"><span class="prop-label">标签</span><span style="font-size:13px;font-weight:700">&lt;${tag}&gt;</span></div>`;
+
+  // Text content
+  if (isTextElement(el) && !['img','hr','br','input'].includes(tag)) {
+    html += `<div class="prop-group"><span class="prop-label">文本内容</span>
+      <textarea class="prop-textarea" id="propContent" rows="3">${escHtml(el.innerHTML)}</textarea></div>`;
+  }
+
+  // Image src
+  if (tag === 'img') {
+    html += `<div class="prop-group"><span class="prop-label">图片地址</span>
+      <input class="prop-input" id="propSrc" value="${escHtml(el.src || '')}"></div>`;
+  }
+
+  // Link href
+  if (tag === 'a') {
+    html += `<div class="prop-group"><span class="prop-label">链接地址</span>
+      <input class="prop-input" id="propHref" value="${escHtml(el.href || '')}"></div>`;
+  }
+
+  // Width & Height — four directional controls: L/R for width, U/D for height
+  const curW = fmtPxOr(s.width, computed.width);
+  const curH = fmtPx(s.height);
+  html += `<div class="prop-group"><span class="prop-label">尺寸 <span class="reset-btn" onclick="resetStyles(['width','height','left','top','position'])" title="重置">↺</span></span>
+    <div class="prop-row"><span class="prop-lbl" data-for="propSizeL" data-axis="x"><span class="ar">◀</span>L<span class="ar">▶</span></span><input class="prop-input" id="propSizeL" value="${curW}" placeholder="auto"></div>
+    <div class="prop-row"><span class="prop-lbl" data-for="propSizeR" data-axis="x"><span class="ar">◀</span>R<span class="ar">▶</span></span><input class="prop-input" id="propSizeR" value="${curW}" placeholder="auto"></div>
+    <div class="prop-row"><span class="prop-lbl" data-for="propSizeU" data-axis="y"><span class="ar">▲</span>U<span class="ar">▼</span></span><input class="prop-input" id="propSizeU" value="${curH}" placeholder="auto"></div>
+    <div class="prop-row"><span class="prop-lbl" data-for="propSizeD" data-axis="y"><span class="ar">▲</span>D<span class="ar">▼</span></span><input class="prop-input" id="propSizeD" value="${curH}" placeholder="auto"></div>
+  </div>`;
+
+  // Font-related
+  if (isTextElement(el)) {
+    html += `<div class="prop-group"><span class="prop-label">字号 <span class="reset-btn" onclick="resetStyles(['fontSize'])" title="重置">↺</span></span>
+      <div style="display:flex;gap:5px;align-items:center"><span class="scrub-icon" data-for="propFontSize" data-axis="x">⇔</span><input class="prop-input" id="propFontSize" value="${s.fontSize||''}" placeholder="${computed.fontSize}" style="flex:1"></div>`;
+    html += `<div class="prop-group"><span class="prop-label">文字颜色 <span class="reset-btn" onclick="resetStyles(['color'])" title="重置">↺</span></span>
+      <input class="prop-input" type="color" id="propColor" value="${rgbToHex(s.color||computed.color)}"></div>`;
+    html += `<div class="prop-group"><span class="prop-label">背景色 <span class="reset-btn" onclick="resetStyles(['backgroundColor'])" title="重置">↺</span></span>
+      <input class="prop-input" type="color" id="propBgColor" value="${rgbToHex(s.backgroundColor||computed.backgroundColor)}"></div>`;
+    const align = s.textAlign || computed.textAlign || 'left';
+    html += `<div class="prop-group"><span class="prop-label">对齐</span>
+      <div class="align-group">
+        <button class="align-btn${align==='left'||align==='start'?' active':''}" onclick="setStyle('textAlign','left')">&#8646;</button>
+        <button class="align-btn${align==='center'?' active':''}" onclick="setStyle('textAlign','center')">&#8645;</button>
+        <button class="align-btn${align==='right'?' active':''}" onclick="setStyle('textAlign','right')">&#8647;</button>
+      </div>`;
+  }
+
+  // Padding & Border radius for containers + images
+  if (['div','section','article','header','footer','main','nav','aside','button','img','figure','figcaption'].includes(tag)) {
+    if (tag !== 'img') {
+      html += `<div class="prop-group"><span class="prop-label">内边距 <span class="reset-btn" onclick="resetStyles(['paddingTop','paddingRight','paddingBottom','paddingLeft'])" title="重置">↺</span></span>
+        <div class="prop-row"><span class="prop-lbl" data-for="propPadU" data-axis="y"><span class="ar">▲</span>T<span class="ar">▼</span></span><input class="prop-input" id="propPadU" value="${fmtPx(s.paddingTop)}" placeholder="0"></div>
+        <div class="prop-row"><span class="prop-lbl" data-for="propPadD" data-axis="y"><span class="ar">▲</span>B<span class="ar">▼</span></span><input class="prop-input" id="propPadD" value="${fmtPx(s.paddingBottom)}" placeholder="0"></div>
+        <div class="prop-row"><span class="prop-lbl" data-for="propPadL" data-axis="x"><span class="ar">◀</span>L<span class="ar">▶</span></span><input class="prop-input" id="propPadL" value="${fmtPx(s.paddingLeft)}" placeholder="0"></div>
+        <div class="prop-row"><span class="prop-lbl" data-for="propPadR" data-axis="x"><span class="ar">◀</span>R<span class="ar">▶</span></span><input class="prop-input" id="propPadR" value="${fmtPx(s.paddingRight)}" placeholder="0"></div>
+      </div>`;
+    }
+    html += `<div class="prop-group"><span class="prop-label">圆角 <span class="reset-btn" onclick="resetStyles(['borderRadius'])" title="重置">↺</span></span>
+      <div style="display:flex;gap:5px;align-items:center"><span class="scrub-icon" data-for="propRadius" data-axis="x">⇔</span><input class="prop-input" id="propRadius" value="${fmtPx(s.borderRadius)}" placeholder="0px" style="flex:1"></div>`;
+  }
+
+  body.innerHTML = html;
+
+  // Bind events — inputs accept typing only; drag-to-adjust is on the label/arrows/icons
+  bindInput('propContent', (v) => { el.innerHTML = v; autoSizeIframe(); }, () => pushUndo());
+  bindInput('propSrc', (v) => { el.src = v; }, () => pushUndo());
+  bindInput('propHref', (v) => { el.href = v; }, () => pushUndo());
+  bindInput('propColor', (v) => { el.style.color = v; }, () => pushUndo());
+  bindInput('propBgColor', (v) => { el.style.backgroundColor = v; }, () => pushUndo());
+  // Size: L (left edge), R (right edge), U (top edge), D (bottom edge)
+  // L and R both represent width; U and D both represent height
+  const syncSizeLR = (curW) => {
+    const li = document.getElementById('propSizeL');
+    const ri = document.getElementById('propSizeR');
+    if (li && li !== document.activeElement) li.value = curW;
+    if (ri && ri !== document.activeElement) ri.value = curW;
+  };
+  const syncSizeUD = (curH) => {
+    const ui = document.getElementById('propSizeU');
+    const di = document.getElementById('propSizeD');
+    if (ui && ui !== document.activeElement) ui.value = curH;
+    if (di && di !== document.activeElement) di.value = curH;
+  };
+  bindInput('propSizeR', (v) => {
+    const n = parseFloat(v);
+    el.style.width = n ? n + 'px' : '';
+    if (n) syncSizeLR(n + 'px');
+  }, () => pushUndo());
+  bindInput('propSizeL', (v) => {
+    const n = parseFloat(v);
+    const oldW = parseFloat(el.style.width) || el.getBoundingClientRect().width;
+    const oldLeft = parseFloat(el.style.left) || 0;
+    el.style.width = n ? n + 'px' : '';
+    if (n) {
+      if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
+      el.style.left = (oldLeft + oldW - n) + 'px';
+      syncSizeLR(n + 'px');
+    }
+  }, () => pushUndo());
+  bindInput('propSizeD', (v) => {
+    const n = parseFloat(v);
+    el.style.height = n ? n + 'px' : '';
+    if (n) syncSizeUD(n + 'px');
+  }, () => pushUndo());
+  bindInput('propSizeU', (v) => {
+    const n = parseFloat(v);
+    const oldH = parseFloat(el.style.height) || el.getBoundingClientRect().height;
+    const oldTop = parseFloat(el.style.top) || 0;
+    el.style.height = n ? n + 'px' : '';
+    if (n) {
+      if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
+      el.style.top = (oldTop + oldH - n) + 'px';
+      syncSizeUD(n + 'px');
+    }
+  }, () => pushUndo());
+  bindInput('propRadius', (v) => { const n=parseFloat(v); el.style.borderRadius = n?n+'px':''; }, () => pushUndo());
+  bindInput('propPadU', (v) => { const n=parseFloat(v); el.style.paddingTop = n?n+'px':''; }, () => pushUndo());
+  bindInput('propPadD', (v) => { const n=parseFloat(v); el.style.paddingBottom = n?n+'px':''; }, () => pushUndo());
+  bindInput('propPadL', (v) => { const n=parseFloat(v); el.style.paddingLeft = n?n+'px':''; }, () => pushUndo());
+  bindInput('propPadR', (v) => { const n=parseFloat(v); el.style.paddingRight = n?n+'px':''; }, () => pushUndo());
+  bindInput('propFontSize', (v) => { el.style.fontSize = v; }, () => pushUndo());
+}
+
+function bindInput(id, onInput, onBlur) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  inp.addEventListener('input', () => onInput(inp.value));
+  inp.addEventListener('blur', () => onBlur());
+}
+
+// Scrubby numeric input: mousedown + drag left/right to adjust value (like Photoshop)
+// unit: 'px' → value stored as number, formatted as "Npx"; '' → value includes its own unit (e.g. "16px")
+function bindScrubbyInput(id, unit, onChange, onEnd) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+
+  let scrub = null;
+
+  function extractUnit(raw) {
+    if (unit === 'px') return 'px';
+    const m = (raw || '').match(/[a-z%]+$/i);
+    return m ? m[0] : 'px';
+  }
+
+  inp.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const raw = inp.value;
+    scrub = {
+      startX: e.clientX,
+      startVal: parseFloat(raw) || 0,
+      unit: extractUnit(raw),
+      moved: false
+    };
+    inp.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ew-resize';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!scrub) return;
+    const dx = e.clientX - scrub.startX;
+    if (Math.abs(dx) < 3 && !scrub.moved) return;
+    scrub.moved = true;
+    inp.focus();
+    const step = e.shiftKey ? 10 : 1;
+    let num = Math.max(0, scrub.startVal + dx * step);
+    if (unit === 'px') num = Math.round(num);
+    const formatted = unit === 'px' ? num + 'px' : num + scrub.unit;
+    inp.value = formatted;
+    onChange(formatted);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!scrub) return;
+    const didMove = scrub.moved;
+    scrub = null;
+    inp.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if (didMove) { inp.blur(); onEnd(); }
+  });
+
+  // Keyboard / paste: parse and re-format
+  inp.addEventListener('input', () => {
+    if (scrub) return;
+    const raw = inp.value;
+    const num = parseFloat(raw) || 0;
+    const u = extractUnit(raw);
+    const formatted = unit === 'px' ? num + 'px' : num + u;
+    onChange(formatted);
+  });
+  inp.addEventListener('blur', () => { if (!scrub) onEnd(); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp')   { e.preventDefault(); adjustInput(inp, (e.shiftKey?10:1), unit); onChange(inp.value); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); adjustInput(inp, -(e.shiftKey?10:1), unit); onChange(inp.value); }
+  });
+}
+
+function adjustInput(inp, delta, unit) {
+  const raw = inp.value;
+  let num = parseFloat(raw) || 0;
+  num = Math.max(0, num + delta);
+  if (unit === 'px') num = Math.round(num);
+  const u = unit === 'px' ? 'px' : ((raw.match(/[a-z%]+$/i) || [])[0] || 'px');
+  inp.value = unit === 'px' ? num + 'px' : num + u;
+}
+
+function setStyle(prop, value) {
+  if (!selectedElement) return;
+  selectedElement.style[prop] = value;
+  updatePropsPanel(selectedElement);
+  pushUndo();
+}
+
+function resetStyles(props) {
+  if (!selectedElement) return;
+  props.forEach(p => { selectedElement.style[p] = ''; });
+  updatePropsPanel(selectedElement);
+  pushUndo();
+  showToast('已重置');
+}
+
+function updateSizeInputs(w, h) {
+  const ids = ['propSizeL','propSizeR','propSizeU','propSizeD'];
+  ids.forEach(id => {
+    const inp = document.getElementById(id);
+    if (inp && inp !== document.activeElement) {
+      inp.value = (id.startsWith('propSizeU') || id.startsWith('propSizeD')) ? Math.round(h) + 'px' : Math.round(w) + 'px';
+    }
+  });
+}
+
+function showEmptyProps() {
+  document.getElementById('propsBody').innerHTML = `<div class="empty-card">
+    <div class="preview-box"></div>
+    <h3>选择画布中的元素</h3>
+    <p>点击文字、图片、按钮或区块后，可在这里编辑尺寸、颜色、圆角、间距与层级。</p>
+  </div>`;
+}
+
+function deleteSelected() {
+  if (!selectedElement) return;
+  const el = selectedElement;
+  deselectElement();
+  el.parentNode.removeChild(el);
+  autoSizeIframe();
+  pushUndo();
+  showToast('已删除');
+}
+
+/* ========================================================================
+   UNDO / REDO (HTML snapshots of the iframe document)
+   ======================================================================== */
+const MAX_UNDO = 50;
+
+function getDocHTML() {
+  const doc = getDoc();
+  if (!doc) return '';
+  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+}
+
+function setDocHTML(html) {
+  return loadHTML(html);
+}
+
+async function pushUndo() {
+  const doc = getDoc();
+  if (!doc) return;
+  undoStack.push(getDocHTML());
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoButtons();
+}
+
+async function undo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(getDocHTML());
+  const html = undoStack.pop();
+  deselectElement();
+  await setDocHTML(html);
+  updateUndoRedoButtons();
+}
+
+async function redo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(getDocHTML());
+  const html = redoStack.pop();
+  deselectElement();
+  await setDocHTML(html);
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  document.getElementById('btnUndo').disabled = undoStack.length === 0;
+  document.getElementById('btnRedo').disabled = redoStack.length === 0;
+  const u2 = document.getElementById('btnUndo2');
+  const r2 = document.getElementById('btnRedo2');
+  if (u2) u2.disabled = undoStack.length === 0;
+  if (r2) r2.disabled = redoStack.length === 0;
+}
+
+/* ========================================================================
+   IMPORT / EXPORT
+   ======================================================================== */
+const welcomeDropZone = document.getElementById('welcomeDropZone');
+
+// Use capturing-phase window-level listeners to intercept BEFORE browser sees the drop
+const _preventDrag = (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (e.dataTransfer) { e.dataTransfer.dropEffect = 'copy'; e.dataTransfer.effectAllowed = 'copyAll'; }
+};
+
+window.addEventListener('dragenter', (e) => {
+  _preventDrag(e);
+  if (welcomeDropZone) welcomeDropZone.classList.add('drag-over');
+}, true);
+window.addEventListener('dragover', _preventDrag, true);
+window.addEventListener('dragleave', (e) => {
+  _preventDrag(e);
+  if (e.screenX === 0 && e.screenY === 0) {
+    if (welcomeDropZone) welcomeDropZone.classList.remove('drag-over');
+  }
+}, true);
+window.addEventListener('drop', (e) => {
+  _preventDrag(e);
+  if (welcomeDropZone) welcomeDropZone.classList.remove('drag-over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file && isValidHTMLFile(file)) loadFile(file);
+}, true);
+
+// Also prevent drop on the iframe
+document.getElementById('canvasIframe').addEventListener('drop', _preventDrag, true);
+
+// Welcome dropzone click triggers file input
+if (welcomeDropZone) {
+  welcomeDropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file && isValidHTMLFile(file)) loadFile(file);
+  e.target.value = '';
+}
+
+function isValidHTMLFile(file) { return file.name.endsWith('.html') || file.name.endsWith('.htm') || file.type === 'text/html'; }
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      showToast('正在加载...');
+      await startEditing(e.target.result);
+    } catch (err) {
+      showToast('解析失败: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function exportFile() {
+  deselectElement();
+  const doc = getDoc();
+  if (!doc) { showToast('没有可导出的内容'); return; }
+  const html = getDocHTML().replace(/<div class="__ve-handle"[^>]*><\/div>/g, '');
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'index.html';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('已导出 index.html');
+}
+
+async function exportPNG() {
+  const doc = getDoc();
+  if (!doc || !doc.body) { showToast('没有可导出的内容'); return; }
+  deselectElement();
+  showToast('正在生成全页 PNG...');
+  try {
+    const body = doc.body;
+    const canvas = await html2canvas(body, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      width: body.scrollWidth,
+      height: body.scrollHeight,
+      windowWidth: body.scrollWidth,
+      windowHeight: body.scrollHeight
+    });
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'page.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('已导出 page.png');
+    }, 'image/png');
+  } catch(e) {
+    showToast('PNG 导出失败: ' + e.message);
+    console.error(e);
+  }
+}
+
+async function composeImage() {
+  const doc = getDoc();
+  if (!doc || !doc.body) { showToast('没有可合成的内容'); return; }
+  deselectElement();
+  showToast('正在合成全页图片...');
+  try {
+    const body = doc.body;
+    const canvas = await html2canvas(body, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      width: body.scrollWidth,
+      height: body.scrollHeight,
+      windowWidth: body.scrollWidth,
+      windowHeight: body.scrollHeight
+    });
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'composite.jpg';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('已合成 composite.jpg');
+    }, 'image/jpeg', 0.95);
+  } catch(e) {
+    showToast('合成失败: ' + e.message);
+    console.error(e);
+  }
+}
+
+function showAbout() {
+  document.getElementById('aboutModal').style.display = 'flex';
+}
+// Close about modal on overlay click
+document.addEventListener('click', (e) => {
+  const modal = document.getElementById('aboutModal');
+  if (e.target === modal) modal.style.display = 'none';
+});
+
+function resetAll() {
+  if (!selectedElement) return;
+  selectedElement.style.cssText = '';
+  selectedElement.style.transform = '';
+  updatePropsPanel(selectedElement);
+  pushUndo();
+  showToast('已重置全部样式');
+}
+
+/* ========================================================================
+   TOOLBAR: ADD ELEMENTS
+   ======================================================================== */
+function toggleAddPanel() {
+  const panel = document.getElementById('addPanel');
+  const btn = document.getElementById('btnAdd');
+  const rect = btn.getBoundingClientRect();
+  panel.style.top = (rect.bottom + 6) + 'px';
+  panel.style.left = (rect.left) + 'px';
+  panel.classList.toggle('show');
+}
+
+function addElement(type) {
+  const doc = getDoc();
+  if (!doc || !doc.body) return;
+  pushUndo();
+
+  let el;
+  switch (type) {
+    case 'heading':
+      el = doc.createElement('h2');
+      el.textContent = '新标题';
+      el.style.cssText = 'font-size:28px;font-weight:700;color:#1e293b;margin:8px 0;';
+      break;
+    case 'text':
+      el = doc.createElement('p');
+      el.textContent = '在这里输入文本...';
+      el.style.cssText = 'font-size:16px;color:#475569;line-height:1.6;margin:4px 0;';
+      break;
+    case 'image':
+      el = doc.createElement('img');
+      el.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect fill="#e2e8f0" width="400" height="200"/><text x="200" y="105" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="sans-serif">图片占位</text></svg>');
+      el.style.cssText = 'width:400px;height:200px;border-radius:8px;display:block;';
+      el.alt = 'placeholder';
+      break;
+    case 'button':
+      el = doc.createElement('button');
+      el.textContent = '按钮';
+      el.style.cssText = 'padding:10px 24px;font-size:15px;font-weight:600;color:#fff;background:#6d5dfc;border:none;border-radius:8px;cursor:pointer;';
+      break;
+    case 'divider':
+      el = doc.createElement('hr');
+      el.style.cssText = 'border:none;border-top:1px solid #e2e8f0;margin:16px 0;';
+      break;
+    case 'container':
+      el = doc.createElement('div');
+      el.style.cssText = 'padding:16px;background:#f8fafc;border-radius:8px;min-height:80px;';
+      el.innerHTML = '<p style="color:#94a3b8;font-size:14px;margin:0;">容器</p>';
+      break;
+  }
+
+  if (el) {
+    if (selectedElement && selectedElement.parentNode === doc.body) {
+      selectedElement.parentNode.insertBefore(el, selectedElement.nextSibling);
+    } else if (selectedElement && selectedElement.isConnected) {
+      const tag = selectedElement.tagName.toLowerCase();
+      if (['div','section','article','header','footer','main','nav','aside'].includes(tag)) {
+        selectedElement.appendChild(el);
+      } else {
+        selectedElement.parentNode.insertBefore(el, selectedElement.nextSibling);
+      }
+    } else {
+      doc.body.appendChild(el);
+    }
+    autoSizeIframe();
+    selectElement(el);
+    showToast('已添加');
+  }
+
+  document.getElementById('addPanel').classList.remove('show');
+}
+
+/* ========================================================================
+   KEYBOARD SHORTCUTS
+   ======================================================================== */
+document.addEventListener('keydown', (e) => {
+  if (editSavedContent !== null) return;
+  if ((e.ctrlKey||e.metaKey) && e.key==='z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey||e.metaKey) && (e.key==='y'||(e.key==='z'&&e.shiftKey))) { e.preventDefault(); redo(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); exportFile(); }
+  if ((e.key==='Delete'||e.key==='Backspace') && selectedElement && document.activeElement===document.body) {
+    e.preventDefault(); deleteSelected();
+  }
+  if (e.key==='Escape') { deselectElement(); document.getElementById('addPanel').classList.remove('show'); }
+});
+
+/* ========================================================================
+   HELPERS
+   ======================================================================== */
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg; toast.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// Close add panel on outside click
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('addPanel');
+  if (!panel.classList.contains('show')) return;
+  if (!panel.contains(e.target) && e.target !== document.getElementById('btnAdd')) {
+    panel.classList.remove('show');
+  }
+});
+
+// Label/icon scrub: mousedown on directional arrows or scrub icons starts drag-to-adjust
+document.getElementById('propsBody').addEventListener('mousedown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+  // Find the scrub trigger — could be a label, vstack, icon, or an arrow sibling
+  let trigger = e.target.closest('[data-for]');
+  if (!trigger) {
+    const row = e.target.closest('.prop-row');
+    if (row) trigger = row.querySelector('[data-for]');
+  }
+  if (!trigger || e.button !== 0) return;
+  e.preventDefault();
+
+  const inputId = trigger.dataset.for;
+  const axis = trigger.dataset.axis || 'x';
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+
+  const raw = inp.value;
+  const m = (raw || '').match(/[a-z%]+$/i);
+  const unit = m ? m[0] : 'px';
+
+  _scrubState = {
+    input: inp,
+    axis: axis,
+    startX: e.clientX,
+    startY: e.clientY,
+    startVal: parseFloat(raw) || 0,
+    unit: unit,
+    moved: false
+  };
+  inp.focus();
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
+});
+
+// Redundant — onDragUp already registered above; kept as comment for clarity
+
+// beforeunload warning
+window.addEventListener('beforeunload', (e) => {
+  if (undoStack.length > 0) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ========================================================================
+   INIT & TRANSITIONS
+   ======================================================================== */
+let hasLoadedDocument = false;
+
+async function startEditing(htmlString) {
+  document.getElementById('welcomeScreen').classList.add('hidden');
+  document.getElementById('canvasIframe').classList.remove('canvas-hidden');
+  document.getElementById('editorTools').style.display = 'flex';
+  await loadHTML(htmlString);
+  hasLoadedDocument = true;
+  undoStack = []; redoStack = [];
+  updateUndoRedoButtons();
+  showToast('已加载');
+}
+
+// After welcome screen transition ends, remove it from layout
+document.addEventListener('transitionend', (e) => {
+  const ws = document.getElementById('welcomeScreen');
+  if (e.target === ws && ws.classList.contains('hidden')) {
+    ws.style.display = 'none';
+  }
+});
+
+/* ========================================================================
+   LOAD SAMPLE
+   ======================================================================== */
+function loadSample() {
+  const sampleHTML = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  body{font-family:Inter,system-ui,sans-serif;max-width:680px;margin:60px auto;padding:0 24px;color:#1a1a1a;background:#fff;line-height:1.7}\n  h1{font-size:36px;font-weight:700;letter-spacing:-.03em;margin-bottom:8px}\n  .sub{font-size:18px;color:#666;margin-bottom:40px}\n  .card{background:#f9f9f7;border-radius:20px;padding:28px;margin:24px 0;border:1px solid #eee}\n  .card h2{font-size:20px;margin:0 0 12px}\n  .card p{color:#555;margin:0}\n  .btn{display:inline-block;padding:12px 28px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer}\n  img{max-width:100%;border-radius:16px;margin:16px 0}\n</style>\n</head>\n<body>\n<h1>欢迎使用 HTML 编辑器</h1>\n<p class="sub">点击任意元素开始编辑，就像在修改设计稿</p>\n<div class="card">\n<h2>可视化编辑</h2>\n<p>选中元素后拖拽手柄调整大小，双击文字直接编辑，右侧面板精细调校样式。</p>\n</div>\n<p>这是一段可编辑的<strong>文本段落</strong>。你可以点击它，然后再次点击来放置光标进行编辑。</p>\n<button class="btn">示例按钮</button>\n</body>\n</html>';
+  startEditing(sampleHTML);
+}
+
+function init() {
+  updateUndoRedoButtons();
+}
+
+init();
+</script>
+</body>
+</html>
