@@ -166,6 +166,10 @@ body{
   font-size:13px;
   font-weight:800;
 }
+.mode-switch{appearance:none;width:32px;height:18px;flex-shrink:0;margin:0;border:0;border-radius:18px;background:var(--line2);cursor:pointer}
+.mode-switch::before{content:"";display:block;width:14px;height:14px;margin:2px;border-radius:50%;background:#fff;transition:transform .15s}
+.mode-switch:checked{background:var(--accent)}
+.mode-switch:checked::before{transform:translateX(14px)}
 .status{
   display:flex;
   align-items:center;
@@ -175,8 +179,8 @@ body{
   font-weight:800;
 }
 .status i{
-  width:8px;height:8px;border-radius:99px;background:#21c55d;display:block;
-  box-shadow:0 0 0 5px rgba(33,197,93,.12);
+  width:8px;height:8px;border-radius:99px;background:var(--save-color,#a1a1aa);display:block;
+  box-shadow:0 0 0 5px rgba(0,0,0,.06);
 }
 
 /* ===== Canvas area ===== */
@@ -184,7 +188,7 @@ body{
   min-height:0;
   padding:24px;
   position:relative;
-  overflow-y:auto;
+  overflow:auto;
   background:
     linear-gradient(rgba(17,17,17,.035) 1px,transparent 1px),
     linear-gradient(90deg,rgba(17,17,17,.035) 1px,transparent 1px);
@@ -302,6 +306,14 @@ body{
   border:none;
   display:block;
 }
+
+/* ===== Drag structure overlay ===== */
+.group-box{position:absolute;outline:1px solid #6d5dfc80;outline-offset:-1px;color:#5144c9}
+.group-box[data-context]{outline:1px dashed #64748b99;color:#64748b}
+.group-box[data-hover]{outline-width:2px;outline-color:currentColor;background:#6d5dfc18;z-index:1}
+.group-arrow{position:absolute;width:6px;height:6px;background:currentColor;clip-path:polygon(100% 0,100% 100%,0 50%)}
+.group-arrow[data-active]{color:#17172b}
+.group-label{position:absolute;z-index:2;max-width:min(380px,calc(100% - 12px));padding:5px 8px;border-radius:4px;background:#252538;color:#fff;font:12px/1.6 ui-monospace,monospace;white-space:pre;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px #0003}
 
 /* ===== Props panel ===== */
 .props{
@@ -545,6 +557,9 @@ body{
     <span class="tb-spacer"></span>
 
     <div class="actions" style="display:flex;align-items:center;gap:6px">
+      <button class="tb-btn" onclick="openFile()">打开 HTML</button>
+      <button class="tb-btn" id="btnSave" onclick="saveFile()" title="保存到源 HTML 文件">保存</button>
+      <button class="tb-btn" onclick="exportFile(true)" title="在新标签页预览">预览</button>
       <button class="tb-btn dark" onclick="exportFile()">导出 HTML</button>
       <button class="tb-btn" onclick="exportPNG()">导出 PNG</button>
       <button class="tb-btn" onclick="composeImage()">合成图片</button>
@@ -557,7 +572,13 @@ body{
     <section class="stage">
       <div class="stage-head">
         <span id="statusText" style="display:none"></span>
-        <div class="status"><i></i> 自动保存已开启</div>
+        <div class="status"><i></i><span id="saveStatus" title="当前文件保留最近 300 步撤销；关闭编辑器或切换文件后清空">打开源文件后自动保存，每 3 秒检查更新</span></div>
+        <div class="crumb">
+          <label class="crumb" title="可操作页内交互，页面跳转请使用顶部预览"><input class="mode-switch" type="checkbox" role="switch" onchange="setInteractiveMode(this.checked)">交互模式</label>
+          <button class="tb-btn" onclick="zoomCanvas(-0.25)" title="缩小网页" aria-label="缩小网页">−</button>
+          <span id="zoomLevel">100%</span>
+          <button class="tb-btn" onclick="zoomCanvas(0.25)" title="放大网页" aria-label="放大网页">+</button>
+        </div>
       </div>
 
       <div class="canvas-wrap" id="canvasContainer">
@@ -568,7 +589,7 @@ body{
             <h1>把 HTML 拖进来，开始像设计稿一样编辑</h1>
 
             <div class="drop-actions">
-              <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('fileInput').click()">导入 HTML</button>
+              <button class="upload-btn" onclick="event.stopPropagation();openFile()">导入 HTML</button>
 
             </div>
           </div>
@@ -576,7 +597,7 @@ body{
 
         <!-- Iframe wrapper (behind welcome screen) -->
         <div id="iframeWrap">
-          <iframe id="canvasIframe" class="canvas-hidden"></iframe>
+          <iframe id="canvasIframe" class="canvas-hidden" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
         </div>
       </div>
     </section>
@@ -637,6 +658,7 @@ body{
    STATE
    ======================================================================== */
 let selectedElement = null;
+let selectionState = null;
 let undoStack = [];
 let redoStack = [];
 let resizeData = null;
@@ -644,8 +666,19 @@ let editSavedContent = null;
 let handles = [];
 let _toastTimer = null;
 let _mutationObserver = null;
+let editOutlineSheet = null;
+let _sizeRAF = null;
 let _scrubState = null;
 let _moveData = null;
+let interactiveMode = false;
+let saveTimer = null;
+let previewDocument = null;
+let openingFile = false;
+let sourceFileHandle = null;
+let sourceFileName = 'index.html';
+let historyHTML = '', savedHTML = '', sourceHTML = '';
+let fileTask = Promise.resolve(), fileOperations = 0, syncing = false;
+const HTML_FILE_TYPES = [{ accept: { 'text/html': ['.html', '.htm'] } }];
 
 function getTranslate(el) {
   const t = el.style.transform;
@@ -661,7 +694,8 @@ function getTranslate(el) {
    ======================================================================== */
 function getDoc() {
   const iframe = document.getElementById('canvasIframe');
-  return iframe && iframe.contentDocument;
+  const doc = iframe && iframe.contentDocument;
+  return doc === previewDocument ? doc : null;
 }
 function getWin() {
   const iframe = document.getElementById('canvasIframe');
@@ -676,18 +710,98 @@ function getRoot() {
    LOAD HTML INTO IFRAME
    ======================================================================== */
 function loadHTML(htmlString) {
+  clearTimeout(saveTimer);
+  hasLoadedDocument = false;
+  previewDocument = null;
+  setSaveStatus('正在载入...');
+  // Install navigation guards before the imported page's scripts can run.
+  const source = new DOMParser().parseFromString(htmlString, 'text/html');
+  const guard = source.createElement('script');
+  guard.textContent = 'parent.guardPreview(document);document.currentScript.remove();';
+  source.head.prepend(guard);
   return new Promise((resolve, reject) => {
     const iframe = document.getElementById('canvasIframe');
     iframe.onload = () => {
       try {
+        if (!getDoc()) {
+          hasLoadedDocument = false;
+          iframe.classList.add('canvas-hidden');
+          setSaveStatus('页面已跳转，请重新打开源文件', '#ef4444');
+          return reject(new Error('Preview document was replaced'));
+        }
         setupIframeListeners();
         createHandles();
         autoSizeIframe();
+        hasLoadedDocument = true;
         resolve();
       } catch (e) { reject(e); }
     };
-    iframe.srcdoc = htmlString;
+    iframe.srcdoc = (source.doctype ? new XMLSerializer().serializeToString(source.doctype) : '') + source.documentElement.outerHTML;
   });
+}
+
+function guardPreview(doc) {
+  previewDocument = doc;
+  const win = doc.defaultView;
+  // Drops inside an iframe do not bubble to the editor window.
+  win.addEventListener('dragover', e => {
+    if (e.dataTransfer?.types.includes('Files')) _preventDrag(e);
+  }, true);
+  win.addEventListener('drop', e => {
+    if (e.dataTransfer?.files.length) handleFileDrop(e);
+  }, true);
+  const blocked = () => showToast('画布内已阻止页面跳转，请使用顶部“预览”');
+  win.navigation?.addEventListener('navigate', e => {
+    if (doc !== previewDocument || e.destination.sameDocument || !e.cancelable) return;
+    e.preventDefault();
+    blocked();
+  });
+  // Run after page click handlers so dropdowns/tabs can handle their own links.
+  const onLink = e => {
+    const link = e.target.closest?.('a[href], area[href]');
+    if (!link || e.defaultPrevented) return;
+    e.preventDefault();
+    if (!interactiveMode) return;
+    const href = link.getAttribute('href').trim();
+    if (e.type === 'click' && href.startsWith('#')) win.location.hash = href;
+    else if (href && !/^javascript:\s*void\s*\(/i.test(href)) blocked();
+  };
+  win.addEventListener('click', onLink);
+  win.addEventListener('auxclick', onLink);
+  doc.addEventListener('submit', e => {
+    if (e.defaultPrevented || (e.submitter?.formMethod || e.target.method) === 'dialog') return;
+    e.preventDefault();
+    blocked();
+  }, true);
+  // form.submit() bypasses the submit event; dialog forms must still close normally.
+  const submit = win.HTMLFormElement.prototype.submit;
+  win.HTMLFormElement.prototype.submit = function () {
+    if (this.method === 'dialog') return submit.call(this);
+    blocked();
+  };
+  win.addEventListener('beforeunload', () => { if (doc === previewDocument) finishEditing(); });
+}
+
+function setInteractiveMode(enabled) {
+  finishEditing();
+  interactiveMode = enabled;
+  showEditOutlines();
+  deselectElement();
+  autoSizeIframe();
+}
+
+function showEditOutlines(enabled = !interactiveMode && !_moveData?.moved) {
+  if (editOutlineSheet) editOutlineSheet.disabled = !enabled;
+}
+
+function zoomCanvas(step) {
+  const iframe = document.getElementById('canvasIframe');
+  const zoom = Math.min(2, Math.max(0.25, (parseFloat(iframe.style.zoom) || 1) + step));
+  iframe.style.zoom = zoom;
+  document.getElementById('iframeWrap').style.width = Math.max(1, zoom) * 100 + '%';
+  document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+  autoSizeIframe();
+  if (selectedElement) showHandles(selectedElement);
 }
 
 function autoSizeIframe() {
@@ -696,9 +810,12 @@ function autoSizeIframe() {
   const wrap = document.getElementById('canvasContainer');
   if (!doc || !doc.body) return;
   const st = wrap.scrollTop;
+  // Measure from a fixed viewport so 100vh pages cannot grow on every edit.
+  iframe.style.minHeight = '600px';
   const h = Math.max(600, doc.body.scrollHeight + 80);
   iframe.style.minHeight = h + 'px';
   wrap.scrollTop = st;
+  if (_moveData?.moved) drawGroupTargets();
 }
 
 /* ========================================================================
@@ -707,11 +824,22 @@ function autoSizeIframe() {
 function setupIframeListeners() {
   const doc = getDoc();
   if (!doc) return;
+  // A constructed stylesheet follows layout without changing or serializing the source DOM.
+  editOutlineSheet = new (getWin().CSSStyleSheet)();
+  editOutlineSheet.replaceSync('body,body *:not(.__ve-handle){outline:1px solid #6d5dfc55!important;outline-offset:-1px!important}');
+  doc.adoptedStyleSheets.push(editOutlineSheet);
+  showEditOutlines();
+  doc.addEventListener('input', scheduleSave, true);
+  doc.addEventListener('keydown', onShortcut, true);
 
-  // Click to select (bubbling phase, no capture)
+  // Capture page actions in edit mode; leave them untouched in interactive mode.
+  doc.addEventListener('pointerdown', e => { if (!interactiveMode) e.stopPropagation(); }, true);
   doc.addEventListener('click', (e) => {
+    if (interactiveMode) return;
+    e.stopPropagation();
     if (resizeData) return;
     if (editSavedContent !== null) return;
+    e.preventDefault();
     if (_justMoved) { _justMoved = false; return; }
     let el = e.target;
     // Walk up from text nodes to their parent element
@@ -720,7 +848,6 @@ function setupIframeListeners() {
     if (el.classList.contains('__ve-handle')) return;
     if (el === doc.body || el === doc.documentElement) { deselectElement(); return; }
     if (['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
-    if (el.tagName === 'A' || el.closest('a')) { e.preventDefault(); }
     // Already-selected text element → second click enters edit mode
     if (el === selectedElement) {
       if (isTextElement(el)) {
@@ -730,13 +857,16 @@ function setupIframeListeners() {
       return;
     }
     selectElement(el);
-  });
+  }, true);
 
   // Mousedown on selected element → prepare drag-to-move (not on handles)
   doc.addEventListener('mousedown', (e) => {
+    if (interactiveMode || e.target.classList.contains('__ve-handle')) return;
+    e.stopPropagation();
     if (e.button !== 0) return;
     if (resizeData) return;
     if (editSavedContent !== null) return;
+    e.preventDefault();
     if (_scrubState) return;
     _justMoved = false;
     let el = e.target;
@@ -753,31 +883,37 @@ function setupIframeListeners() {
         startY: e.clientY,
         startLeft: parseFloat(el.style.left) || 0,
         startTop: parseFloat(el.style.top) || 0,
+        originalStyle: el.getAttribute('style'),
         startTx: tr,
         moved: false,
         wasStatic: !el.style.position || el.style.position === 'static'
       };
     }
-  });
+  }, true);
 
   // Scroll inside iframe → update handle positions
   const win = getWin();
   if (win) {
+    win.addEventListener('blur', onDragUp);
     win.addEventListener('scroll', () => {
+      if (_moveData?.moved) drawGroupTargets();
       if (selectedElement) showHandles(selectedElement);
-    });
+    }, true);
   }
 
   // Drag move/up inside iframe — critical for smooth resize (iframe has own event context)
   doc.addEventListener('mousemove', onDragMove);
-  doc.addEventListener('mouseup', onDragUp);
+  doc.addEventListener('mouseup', onDragUp, true);
 
   // Mutation observer to auto-resize iframe
   if (doc.body) {
     if (_mutationObserver) _mutationObserver.disconnect();
     _mutationObserver = new MutationObserver(() => {
-      if (resizeData) return;
-      autoSizeIframe();
+      if (resizeData || _sizeRAF) return;
+      _sizeRAF = requestAnimationFrame(() => {
+        _sizeRAF = null;
+        if (getDoc() === doc && !resizeData) autoSizeIframe();
+      });
     });
     _mutationObserver.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
   }
@@ -810,7 +946,7 @@ function createHandles() {
 }
 
 function showHandles(el) {
-  if (!el || !el.isConnected) { hideHandles(); return; }
+  if (!el || !el.isConnected || _moveData?.moved) { hideHandles(); return; }
   // Recreate if handles lost (e.g. after undo)
   if (handles.length === 0 || !handles[0].isConnected) createHandles();
 
@@ -842,8 +978,12 @@ function hideHandles() {
 function selectElement(el) {
   deselectElement();
   selectedElement = el;
-  el.style.outline = '2px solid #6d5dfc';
-  el.style.outlineOffset = '2px';
+  selectionState = {
+    styles: ['outline', 'outline-offset', 'cursor'].map(p => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]),
+    editable: el.getAttribute('contenteditable'), style: el.getAttribute('style'), cssText: el.style.cssText
+  };
+  el.style.setProperty('outline', '2px solid #6d5dfc', 'important');
+  el.style.setProperty('outline-offset', '2px', 'important');
   el.style.cursor = 'move';
   showHandles(el);
   updatePropsPanel(el);
@@ -851,11 +991,22 @@ function selectElement(el) {
   document.getElementById('statusText').textContent = '已选中';
 }
 
+function restoreSelection(el) {
+  selectionState.styles.forEach(([p, value, priority]) => el.style.setProperty(p, value, priority));
+  if (selectionState.editable === null) el.removeAttribute('contenteditable');
+  else el.setAttribute('contenteditable', selectionState.editable);
+  if (el.style.cssText === selectionState.cssText) {
+    if (selectionState.style === null) {
+      // Reading first synchronizes Chromium's pending inline style attribute.
+      if (el.hasAttribute('style')) el.removeAttribute('style');
+    } else el.setAttribute('style', selectionState.style);
+  }
+}
+
 function deselectElement() {
   if (selectedElement && selectedElement.isConnected) {
-    selectedElement.style.outline = '';
-    selectedElement.style.outlineOffset = '';
-    selectedElement.style.cursor = '';
+    if (editSavedContent !== null) selectedElement.blur();
+    restoreSelection(selectedElement);
   }
   selectedElement = null;
   hideHandles();
@@ -889,11 +1040,183 @@ function startResize(e, dir) {
 }
 
 let _resizeRAF = null;
-let _moveRAF = null;
 let _justMoved = false;
+
+function movePoint(e) {
+  const frame = document.getElementById('canvasIframe'), rect = frame.getBoundingClientRect();
+  const zoom = parseFloat(frame.style.zoom) || 1;
+  const outside = e.view === window || e.target?.ownerDocument === document;
+  return { x: outside ? (e.clientX - rect.left) / zoom : e.clientX, y: outside ? (e.clientY - rect.top) / zoom : e.clientY,
+    clientX: outside ? e.clientX : rect.left + e.clientX * zoom, clientY: outside ? e.clientY : rect.top + e.clientY * zoom };
+}
+
+function groupTag(target, dragged) {
+  if (!target.isConnected || !dragged.isConnected || target.contains(dragged) || dragged.contains(target)) return;
+  if (target.closest('.__ve-handle') || [target, dragged].some(el => el.namespaceURI !== 'http://www.w3.org/1999/xhtml' && el.tagName !== 'svg')) return;
+  if (/^(SCRIPT|STYLE|LINK|META|TEMPLATE|BR)$/.test(target.tagName)) return;
+  const parent = target.parentElement;
+  if (!parent || parent.namespaceURI !== 'http://www.w3.org/1999/xhtml' || /^(HTML|HEAD|TABLE|THEAD|TBODY|TFOOT|TR|COLGROUP|UL|OL|MENU|DL|SELECT|OPTGROUP|PICTURE)$/.test(parent.tagName)) return;
+  if (target.closest('a,button') && (dragged.matches('a,button,input,select,textarea') || dragged.querySelector('a,button,input,select,textarea'))) return;
+  const inline = /^(P|H[1-6]|SPAN|A|BUTTON|LABEL|PRE|EM|STRONG|B|I|U|S|SMALL|CODE|SUB|SUP|MARK|TIME|ABBR)$/;
+  if (inline.test(parent.tagName)) {
+    if (![target, dragged].every(el => inline.test(el.tagName) || /^(IMG|INPUT|TEXTAREA|SELECT|SVG|CANVAS)$/.test(el.tagName.toUpperCase()))) return;
+    if ([target, dragged].some(el => /^(P|H[1-6]|PRE)$/.test(el.tagName))) return;
+    return 'span';
+  }
+  return 'div';
+}
+
+function drawGroupTargets() {
+  const move = _moveData;
+  if (!move?.moved) return;
+  if (!move.overlay) {
+    // Keep ancestors and restricted containers visible as structure, without drop arrows.
+    move.targets = [getDoc().body, ...getDoc().body.querySelectorAll('*')].filter(el =>
+      !move.el.contains(el) && !el.closest('.__ve-handle') && !/^(SCRIPT|STYLE|LINK|META|TEMPLATE|BR)$/.test(el.tagName));
+    move.boxes = new Map();
+    move.overlay = document.createElement('div');
+    move.overlay.id = 'groupDropTargets';
+    move.overlay.setAttribute('aria-hidden', 'true');
+    move.overlay.style.cssText = 'position:fixed;overflow:hidden;pointer-events:none;z-index:2000';
+    move.label = document.createElement('div');
+    move.label.className = 'group-label'; move.label.hidden = true;
+    move.overlay.appendChild(move.label);
+    document.body.appendChild(move.overlay);
+  }
+  const frame = document.getElementById('canvasIframe'), f = frame.getBoundingClientRect();
+  const canvas = document.getElementById('canvasContainer').getBoundingClientRect(), zoom = parseFloat(frame.style.zoom) || 1;
+  const view = { left: Math.max(canvas.left, f.left), top: Math.max(canvas.top, f.top), right: Math.min(canvas.right, f.right), bottom: Math.min(canvas.bottom, f.bottom) };
+  view.width = Math.max(0, view.right - view.left); view.height = Math.max(0, view.bottom - view.top);
+  move.view = view;
+  Object.assign(move.overlay.style, { left: view.left + 'px', top: view.top + 'px', width: view.width + 'px', height: view.height + 'px' });
+  move.points = [];
+  const clips = new Map(), slots = new Map();
+  const occupied = (x, y) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      if (slots.get((cx + dx) + ':' + (cy + dy))?.some(p => Math.abs(p.x - x) < 10 && Math.abs(p.y - y) < 10)) return true;
+    }
+    return false;
+  };
+  for (const target of move.targets) {
+    const r = target.getBoundingClientRect(), style = getWin().getComputedStyle(target);
+    const left = f.left + r.left * zoom, top = f.top + r.top * zoom, right = left + r.width * zoom, bottom = top + r.height * zoom;
+    const clip = clips.get(target.parentElement) || view, childClip = { ...clip };
+    if (/^(hidden|clip|auto|scroll)$/.test(style.overflowX)) {
+      childClip.left = Math.max(clip.left, left + target.clientLeft * zoom);
+      childClip.right = Math.min(clip.right, left + (target.clientLeft + target.clientWidth) * zoom);
+    }
+    if (/^(hidden|clip|auto|scroll)$/.test(style.overflowY)) {
+      childClip.top = Math.max(clip.top, top + target.clientTop * zoom);
+      childClip.bottom = Math.min(clip.bottom, top + (target.clientTop + target.clientHeight) * zoom);
+    }
+    clips.set(target, childClip);
+    const visible = target.isConnected && r.width > 0 && r.height > 0 && clip.right > clip.left && clip.bottom > clip.top && right > clip.left && left < clip.right && bottom > clip.top && top < clip.bottom && style.visibility === 'visible';
+    let item = move.boxes.get(target);
+    if (!visible) { item?.box.remove(); move.boxes.delete(target); continue; }
+    if (!item) {
+      const box = document.createElement('div'), groupable = !!groupTag(target, move.el);
+      box.className = 'group-box'; box.toggleAttribute('data-context', !groupable);
+      const markers = (groupable ? [0, 1, 2, 3] : []).map(side => {
+        const marker = document.createElement('span');
+        marker.className = 'group-arrow';
+        marker.style.transform = 'translate(-50%,-50%) rotate(' + side * 90 + 'deg)';
+        box.appendChild(marker); return marker;
+      });
+      item = { target, box, markers };
+      move.overlay.appendChild(box); move.boxes.set(target, item);
+    }
+    Object.assign(item, { left, top, right, bottom, clip });
+    item.label = target.localName + (target.id ? '#' + target.id : [...target.classList].slice(0, 2).map(c => '.' + c).join('')) + ' · ' + style.display + ' · ' + Math.round(r.width) + ' × ' + Math.round(r.height);
+    Object.assign(item.box.style, { left: (left - view.left) + 'px', top: (top - view.top) + 'px', width: r.width * zoom + 'px', height: r.height * zoom + 'px',
+      clipPath: 'inset(' + [clip.top - top, right - clip.right, bottom - clip.bottom, clip.left - left].map(n => Math.max(-12, n) + 'px').join(' ') + ')' });
+    // Tiny arrows stay inside their box; opposing arrows use different positions along the edge.
+    const size = Math.min(6, right - left, bottom - top), ix = Math.min(5, (right - left) / 2), iy = Math.min(5, (bottom - top) / 2);
+    [[left + ix, top + (bottom - top) * 2 / 3], [left + (right - left) / 3, top + iy], [right - ix, top + (bottom - top) / 3], [left + (right - left) * 2 / 3, bottom - iy]].forEach(([x, y], side) => {
+      const marker = item.markers[side];
+      if (!marker) return;
+      const vertical = side % 2 === 0;
+      const start = Math.max(vertical ? top : left, vertical ? clip.top : clip.left), end = Math.min(vertical ? bottom : right, vertical ? clip.bottom : clip.right);
+      const inset = Math.min(5, (end - start) / 2), min = start + inset, max = end - inset;
+      const base = Math.max(min, Math.min(max, vertical ? y : x));
+      if (vertical) y = base; else x = base;
+      // Shared parent/child edges also need distinct, individually reachable arrows.
+      for (let step = 1; occupied(x, y) && step <= Math.ceil((max - min) / 6); step++) {
+        const next = base + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 12;
+        if (next >= min && next <= max) { if (vertical) y = next; else x = next; }
+      }
+      marker.style.left = (x - left) + 'px'; marker.style.top = (y - top) + 'px';
+      marker.style.width = marker.style.height = size + 'px';
+      const visible = x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom;
+      marker.style.display = visible ? 'grid' : 'none';
+      if (visible) {
+        const point = { target, side, marker, item, x, y }, key = Math.floor(x / 10) + ':' + Math.floor(y / 10);
+        move.points.push(point);
+        if (!slots.has(key)) slots.set(key, []);
+        slots.get(key).push(point);
+      }
+    });
+  }
+  updateGroupTarget();
+}
+
+function updateGroupTarget() {
+  const move = _moveData;
+  if (!move?.point) return;
+  const x = move.point.clientX, y = move.point.clientY;
+  const view = move.view;
+  const inside = x >= view.left && x <= view.right && y >= view.top && y <= view.bottom;
+  let drop = null, hover = null, distance = inside ? 8 : -1;
+  for (const item of move.boxes.values()) {
+    if (inside && x >= Math.max(item.left, item.clip.left) && x <= Math.min(item.right, item.clip.right) && y >= Math.max(item.top, item.clip.top) && y <= Math.min(item.bottom, item.clip.bottom)) hover = item;
+  }
+  for (const point of move.points || []) {
+    const clip = point.item.clip;
+    if (x < clip.left || x > clip.right || y < clip.top || y > clip.bottom) continue;
+    const d = Math.hypot(point.x - x, point.y - y);
+    if (d <= distance) { distance = d; drop = point; }
+  }
+  if (drop?.marker !== move.drop?.marker) {
+    move.drop?.marker.removeAttribute('data-active');
+    drop?.marker.setAttribute('data-active', '');
+  }
+  move.drop = drop;
+  hover = drop?.item || hover;
+  if (hover !== move.hover) {
+    move.hover?.box.removeAttribute('data-hover');
+    hover?.box.setAttribute('data-hover', '');
+    move.hover = hover;
+  }
+  move.label.hidden = !hover;
+  if (hover) {
+    move.label.textContent = hover.label + (drop ? '\n' + ['← 放在左侧 · 横向组合', '↑ 放在上方 · 纵向组合', '→ 放在右侧 · 横向组合', '↓ 放在下方 · 纵向组合'][drop.side] : '');
+    move.label.style.left = Math.max(6, Math.min(hover.left - view.left, view.width - 386)) + 'px';
+    move.label.style.top = Math.max(6, hover.top - view.top - (drop ? 56 : 34)) + 'px';
+  }
+}
+
+function groupElements(dragged, target, side) {
+  const tag = groupTag(target, dragged);
+  if (!tag) return false;
+  const parentStyle = getWin().getComputedStyle(target.parentElement);
+  const group = getDoc().createElement(tag), horizontal = side % 2 === 0;
+  group.style.cssText = 'display:' + (tag === 'span' ? 'inline-flex' : 'flex') + ';min-width:0;flex-wrap:nowrap';
+  group.style.flexDirection = horizontal ? (parentStyle.direction === 'rtl' ? 'row-reverse' : 'row') : 'column';
+  group.style.gap = parentStyle.gap;
+  target.before(group);
+  group.append(...(side < 2 ? [dragged, target] : [target, dragged]));
+  for (const el of [dragged, target]) {
+    el.style.position = 'relative'; el.style.inset = 'auto'; el.style.order = '0';
+  }
+  selectElement(group);
+  showToast(horizontal ? '已创建横向组合容器' : '已创建纵向组合容器');
+  return true;
+}
 
 // Central drag-move handler — works on BOTH parent and iframe documents
 function onDragMove(e) {
+  // Mouseup can be lost outside the window or intercepted by the imported page.
+  if (!(e.buttons & 1)) { onDragUp(); return; }
   // Handle resize drag
   if (resizeData) {
     const { el, dir, startX, startY, startW, startH, startLeft, startTop, wasStatic, isInline } = resizeData;
@@ -932,12 +1255,14 @@ function onDragMove(e) {
 
   // Handle drag-to-move
   if (_moveData) {
-    if (!(e.buttons & 1)) { finishMove(); return; }
-    const dx = e.clientX - _moveData.startX;
-    const dy = e.clientY - _moveData.startY;
+    const point = movePoint(e);
+    _moveData.point = point;
+    const dx = point.x - _moveData.startX;
+    const dy = point.y - _moveData.startY;
     if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && !_moveData.moved) return;
     if (!_moveData.moved) {
       _moveData.moved = true;
+      showEditOutlines();
       if (_moveData.wasStatic) _moveData.el.style.position = 'relative';
       // Store original visual state & apply drag feedback
       const el = _moveData.el;
@@ -958,18 +1283,12 @@ function onDragMove(e) {
     const el = _moveData.el;
     el.style.left = (_moveData.startLeft + dx) + 'px';
     el.style.top = (_moveData.startTop + dy) + 'px';
-    if (!_moveRAF) {
-      _moveRAF = requestAnimationFrame(() => {
-        _moveRAF = null;
-        if (_moveData && _moveData.el.isConnected) showHandles(_moveData.el);
-      });
-    }
+    if (_moveData.overlay) updateGroupTarget();
     return;
   }
 
   // Handle label scrub
   if (_scrubState) {
-    if (!(e.buttons & 1)) { finishScrub(); return; }
     const { input, axis, startX, startY, startVal, unit } = _scrubState;
     const delta = axis === 'x' ? (e.clientX - startX) : (e.clientY - startY);
     if (Math.abs(delta) < 3 && !_scrubState.moved) return;
@@ -983,7 +1302,7 @@ function onDragMove(e) {
   }
 }
 
-function onDragUp() {
+function onDragUp(e) {
   if (resizeData) {
     resizeData = null;
     if (_resizeRAF) { cancelAnimationFrame(_resizeRAF); _resizeRAF = null; }
@@ -995,7 +1314,7 @@ function onDragUp() {
     autoSizeIframe();
     if (selectedElement) showHandles(selectedElement);
   }
-  if (_moveData) finishMove();
+  if (_moveData) finishMove(e);
   finishScrub();
 }
 
@@ -1008,29 +1327,40 @@ function finishScrub() {
   if (didMove) pushUndo();
 }
 
-function finishMove() {
+function finishMove(e, cancel = false) {
   if (!_moveData) return;
-  const el = _moveData.el;
+  const move = _moveData, el = move.el;
+  if (e?.type === 'mouseup' && move.moved) { move.point = movePoint(e); drawGroupTargets(); }
+  const drop = e?.type === 'mouseup' ? move.drop : null;
+  move.overlay?.remove();
+  _moveData = null;
+  showEditOutlines();
   el.style.cursor = '';
   document.body.style.cursor = '';
-  if (_moveData.moved) {
+  if (move.moved) {
     // Restore visual state
-    el.style.outline = _moveData._savedOutline || '';
-    el.style.outlineOffset = _moveData._savedOutlineOffset || '';
-    el.style.boxShadow = _moveData._savedBoxShadow || '';
-    el.style.transition = _moveData._savedTransition || '';
-    el.style.zIndex = _moveData._savedZIndex || '';
+    el.style.setProperty('outline', move._savedOutline || '', 'important');
+    el.style.setProperty('outline-offset', move._savedOutlineOffset || '', 'important');
+    el.style.boxShadow = move._savedBoxShadow || '';
+    el.style.transition = move._savedTransition || '';
+    el.style.zIndex = move._savedZIndex || '';
+    if (cancel || (drop && groupTag(drop.target, el))) {
+      if (move.originalStyle === null) el.removeAttribute('style');
+      else el.setAttribute('style', move.originalStyle);
+      if (!cancel) { deselectElement(); groupElements(el, drop.target, drop.side); }
+    }
     _justMoved = true;
-    pushUndo();
+    if (!cancel) pushUndo();
     autoSizeIframe();
     if (el === selectedElement && el.isConnected) { showHandles(el); el.style.cursor = 'move'; }
   }
-  _moveData = null;
-  if (_moveRAF) { cancelAnimationFrame(_moveRAF); _moveRAF = null; }
 }
 
 document.addEventListener('mousemove', onDragMove);
-document.addEventListener('mouseup', onDragUp);
+document.addEventListener('mouseup', onDragUp, true);
+window.addEventListener('scroll', drawGroupTargets, true);
+window.addEventListener('resize', drawGroupTargets);
+window.addEventListener('blur', onDragUp);
 
 /* ========================================================================
    INLINE TEXT EDITING
@@ -1050,15 +1380,21 @@ function isInlineText(el) {
 
 // Click-to-edit: place cursor at click position (called via setTimeout to defer past click processing)
 function startEditAtCursor(el, cx, cy) {
-  if (!selectedElement) selectElement(el);
+  if (interactiveMode || selectedElement !== el || !el.isConnected || editSavedContent !== null) return;
   hideHandles();
-  el.style.outline = '2px solid #f59e0b';
-  el.style.outlineOffset = '2px';
+  el.style.setProperty('outline', '2px solid #f59e0b', 'important');
+  el.style.setProperty('outline-offset', '2px', 'important');
   el.contentEditable = 'true';
   editSavedContent = el.innerHTML;
 
   const doc = getDoc();
+  el.addEventListener('blur', onEditBlur);
+  el.addEventListener('keydown', onEditKey);
   el.focus();
+  if (doc.activeElement !== el) {
+    if (editSavedContent !== null) onEditBlur({ target: el });
+    return;
+  }
 
   try {
     const range = doc.caretRangeFromPoint(cx, cy);
@@ -1068,27 +1404,27 @@ function startEditAtCursor(el, cx, cy) {
       sel.addRange(range);
     }
   } catch(e) {}
-
-  el.addEventListener('blur', onEditBlur);
-  el.addEventListener('keydown', onEditKey);
 }
 
 // Double-click: select all text for quick replacement
 function startEditFull(el) {
-  deselectElement();
+  selectElement(el);
   el.contentEditable = 'true';
-  el.focus();
   editSavedContent = el.innerHTML;
 
   const doc = getDoc();
+  el.addEventListener('blur', onEditBlur);
+  el.addEventListener('keydown', onEditKey);
+  el.focus();
+  if (doc.activeElement !== el) {
+    if (editSavedContent !== null) onEditBlur({ target: el });
+    return;
+  }
   const range = doc.createRange();
   range.selectNodeContents(el);
   const sel = getWin().getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
-
-  el.addEventListener('blur', onEditBlur);
-  el.addEventListener('keydown', onEditKey);
 }
 
 function onEditBlur(e) {
@@ -1103,10 +1439,10 @@ function onEditKey(e) {
 }
 
 function commitEdit(el) {
-  el.contentEditable = 'false';
+  restoreSelection(el);
   if (el === selectedElement) {
-    el.style.outline = '2px solid #6d5dfc';
-    el.style.outlineOffset = '2px';
+    el.style.setProperty('outline', '2px solid #6d5dfc', 'important');
+    el.style.setProperty('outline-offset', '2px', 'important');
     showHandles(el);
   } else {
     el.style.outline = '';
@@ -1345,8 +1681,8 @@ function bindScrubbyInput(id, unit, onChange, onEnd) {
   });
   inp.addEventListener('blur', () => { if (!scrub) onEnd(); });
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowUp')   { e.preventDefault(); adjustInput(inp, (e.shiftKey?10:1), unit); onChange(inp.value); }
-    if (e.key === 'ArrowDown') { e.preventDefault(); adjustInput(inp, -(e.shiftKey?10:1), unit); onChange(inp.value); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); adjustInput(inp, (e.shiftKey?10:1), unit); onChange(inp.value); scheduleSave(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); adjustInput(inp, -(e.shiftKey?10:1), unit); onChange(inp.value); scheduleSave(); }
   });
 }
 
@@ -1405,43 +1741,151 @@ function deleteSelected() {
 /* ========================================================================
    UNDO / REDO (HTML snapshots of the iframe document)
    ======================================================================== */
-const MAX_UNDO = 50;
+const MAX_UNDO = 300;
 
 function getDocHTML() {
   const doc = getDoc();
   if (!doc) return '';
-  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  const root = doc.documentElement.cloneNode(true);
+  const index = Array.from(doc.querySelectorAll('*')).indexOf(selectedElement);
+  const selected = index === 0 ? root : root.querySelectorAll('*')[index - 1];
+  if (selected) restoreSelection(selected);
+  root.querySelectorAll('.__ve-handle').forEach(el => el.remove());
+  return (doc.doctype ? new XMLSerializer().serializeToString(doc.doctype) + '\n' : '') + root.outerHTML;
 }
 
-function setDocHTML(html) {
-  return loadHTML(html);
-}
-
-async function pushUndo() {
-  const doc = getDoc();
-  if (!doc) return;
-  undoStack.push(getDocHTML());
+function remember(html) {
+  undoStack.push(html);
   if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+// Store the previous state, not the just-edited state; ignore unchanged snapshots.
+function recordChange() {
+  if (!hasLoadedDocument || resizeData || _moveData || _scrubState) return false;
+  const html = getDocHTML();
+  if (!html || html === historyHTML) return false;
+  remember(historyHTML);
+  historyHTML = html;
   redoStack = [];
   updateUndoRedoButtons();
+  return true;
 }
 
-async function undo() {
-  if (undoStack.length === 0) return;
-  redoStack.push(getDocHTML());
-  const html = undoStack.pop();
-  deselectElement();
-  await setDocHTML(html);
-  updateUndoRedoButtons();
+function pushUndo() {
+  clearTimeout(saveTimer);
+  if (recordChange()) syncSource();
 }
 
-async function redo() {
-  if (redoStack.length === 0) return;
-  undoStack.push(getDocHTML());
-  const html = redoStack.pop();
+function scheduleSave() {
+  if (!hasLoadedDocument) return;
+  clearTimeout(saveTimer);
+  setSaveStatus('修改待写入源文件…');
+  saveTimer = setTimeout(pushUndo, 300);
+}
+
+function finishEditing() {
+  if (!hasLoadedDocument) return;
+  getDoc()?.activeElement?.blur();
+  onDragUp();
+  pushUndo();
+}
+
+// Serialize disk access, history restores and file switches.
+function queueFileTask(action) {
+  fileOperations++;
+  fileTask = fileTask.then(action).catch(e => {
+    setSaveStatus('文件同步失败，请保存重试：' + e.message, '#ef4444');
+    return false;
+  }).finally(() => fileOperations--);
+  return fileTask;
+}
+
+async function setDocHTML(html) {
   deselectElement();
-  await setDocHTML(html);
-  updateUndoRedoButtons();
+  await loadHTML(html);
+  historyHTML = getDocHTML();
+}
+
+function restoreHistory(isRedo = false) {
+  if (openingFile) return;
+  return queueFileTask(async () => {
+    finishEditing();
+    const from = isRedo ? redoStack : undoStack, to = isRedo ? undoStack : redoStack;
+    if (!from.length) return;
+    const html = from[from.length - 1], current = historyHTML;
+    await setDocHTML(html);
+    from.pop();
+    to.push(current);
+    updateUndoRedoButtons();
+    syncSource();
+  });
+}
+function undo() { return restoreHistory(); }
+function redo() { return restoreHistory(true); }
+
+function setSaveStatus(message, color = '#d4a017') {
+  const status = document.getElementById('saveStatus');
+  status.textContent = message;
+  status.parentElement.style.setProperty('--save-color', color);
+}
+
+function syncSource() {
+  if (syncing) return fileTask;
+  syncing = true;
+  return queueFileTask(async () => {
+    let writable;
+    try {
+      if (!hasLoadedDocument && historyHTML === savedHTML) return;
+      if (!sourceFileHandle) {
+        setSaveStatus(window.showSaveFilePicker ? '请点击“保存”关联源文件' : '浏览器不支持文件同步，请导出 HTML');
+        return false;
+      }
+      do {
+        const disk = await (await sourceFileHandle.getFile()).text();
+        if (resizeData || _moveData || _scrubState) return;
+        if (disk !== sourceHTML) {
+          recordChange();
+          if (historyHTML !== savedHTML) {
+            // Concurrent external edits remain recoverable instead of disappearing.
+            remember(disk);
+            showToast('源文件同时发生修改，外部版本已保留，可撤销恢复');
+          } else {
+            if (editSavedContent !== null || document.getElementById('propsBody').contains(document.activeElement)) return;
+            const previous = historyHTML;
+            await setDocHTML(disk);
+            remember(previous);
+            savedHTML = historyHTML;
+          }
+          sourceHTML = disk;
+          redoStack = [];
+          updateUndoRedoButtons();
+        }
+        if (historyHTML !== savedHTML) {
+          if (await sourceFileHandle.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+            setSaveStatus('未获写入权限，点击“保存”授权', '#ef4444');
+            return false;
+          }
+          const html = historyHTML;
+          setSaveStatus('正在保存源文件…');
+          writable = await sourceFileHandle.createWritable();
+          await writable.write(html);
+          if (await (await sourceFileHandle.getFile()).text() !== sourceHTML) {
+            await writable.abort();
+            writable = null;
+            continue;
+          }
+          await writable.close();
+          writable = null;
+          sourceHTML = savedHTML = html;
+        }
+      } while (historyHTML !== savedHTML);
+      setSaveStatus(hasLoadedDocument ? '源文件已同步 · 每 3 秒检查更新' : '源文件已保存，请重新打开', '#21c55d');
+      return true;
+    } finally {
+      await writable?.abort().catch(() => {});
+      syncing = false;
+    }
+  });
 }
 
 function updateUndoRedoButtons() {
@@ -1475,19 +1919,33 @@ window.addEventListener('dragleave', (e) => {
     if (welcomeDropZone) welcomeDropZone.classList.remove('drag-over');
   }
 }, true);
-window.addEventListener('drop', (e) => {
+async function handleFileDrop(e) {
   _preventDrag(e);
   if (welcomeDropZone) welcomeDropZone.classList.remove('drag-over');
   const file = e.dataTransfer?.files?.[0];
-  if (file && isValidHTMLFile(file)) loadFile(file);
-}, true);
-
-// Also prevent drop on the iframe
-document.getElementById('canvasIframe').addEventListener('drop', _preventDrag, true);
+  if (file && isValidHTMLFile(file)) {
+    const item = Array.from(e.dataTransfer.items).find(item => item.kind === 'file');
+    const handle = item?.getAsFileSystemHandle?.();
+    loadFile(file, await handle?.catch(() => null));
+  }
+}
+window.addEventListener('drop', handleFileDrop, true);
 
 // Welcome dropzone click triggers file input
 if (welcomeDropZone) {
-  welcomeDropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+  welcomeDropZone.addEventListener('click', openFile);
+}
+
+async function openFile() {
+  if (!window.showOpenFilePicker) return document.getElementById('fileInput').click();
+  try {
+    const [handle] = await window.showOpenFilePicker({ types: HTML_FILE_TYPES });
+    const file = await handle.getFile();
+    if (isValidHTMLFile(file)) await loadFile(file, handle);
+    else showToast('请选择 HTML 文件');
+  } catch (e) {
+    if (e.name !== 'AbortError') showToast('打开失败: ' + e.message);
+  }
 }
 
 function handleFileSelect(e) {
@@ -1498,27 +1956,56 @@ function handleFileSelect(e) {
 
 function isValidHTMLFile(file) { return file.name.endsWith('.html') || file.name.endsWith('.htm') || file.type === 'text/html'; }
 
-function loadFile(file) {
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      showToast('正在加载...');
-      await startEditing(e.target.result);
-    } catch (err) {
-      showToast('解析失败: ' + err.message);
-      console.error(err);
-    }
-  };
-  reader.readAsText(file);
+async function loadFile(file, handle = null) {
+  if (openingFile || document.getElementById('btnSave').disabled) { showToast('请等待当前文件操作完成'); return; }
+  openingFile = true;
+  try {
+    // Ask while the open/drop gesture is still active; background saves never prompt.
+    await handle?.requestPermission({ mode: 'readwrite' }).catch(() => {});
+    finishEditing();
+    await syncSource();
+    await queueFileTask(async () => {
+      if (historyHTML !== savedHTML && !confirm('当前修改尚未写入源文件，是否放弃并打开其他文件？')) return;
+      if (handle) file = await handle.getFile();
+      await startEditing(await file.text(), handle, file.name);
+    });
+  } finally { openingFile = false; }
 }
 
-async function exportFile() {
+async function saveFile() {
+  const button = document.getElementById('btnSave');
+  if (!getDoc()) { showToast('没有可保存的内容'); return; }
+  if (openingFile || button.disabled) return;
+  if (!sourceFileHandle && !window.showSaveFilePicker) { showToast('当前浏览器不支持直接写回文件，请使用“导出 HTML”'); return; }
+  button.disabled = true;
+  try {
+    const handle = sourceFileHandle || await window.showSaveFilePicker({ suggestedName: sourceFileName, types: HTML_FILE_TYPES });
+    if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+      setSaveStatus('未获写入权限，点击“保存”授权', '#ef4444');
+      return;
+    }
+    finishEditing();
+    await queueFileTask(async () => {
+      if (!sourceFileHandle) {
+        sourceHTML = await (await handle.getFile()).text();
+        sourceFileHandle = handle;
+        savedHTML = ''; // The first save must also write an otherwise unedited file.
+      }
+    });
+    if (await syncSource()) showToast('已保存 ' + handle.name);
+  } catch (e) {
+    if (e.name !== 'AbortError') setSaveStatus('保存失败：' + e.message, '#ef4444');
+  } finally { button.disabled = false; }
+}
+
+async function exportFile(preview = false) {
   deselectElement();
   const doc = getDoc();
   if (!doc) { showToast('没有可导出的内容'); return; }
-  const html = getDocHTML().replace(/<div class="__ve-handle"[^>]*><\/div>/g, '');
+  const html = getDocHTML();
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
+  if (preview) { window.open(url, '_blank', 'noopener'); return; }
   const a = document.createElement('a');
   a.href = url; a.download = 'index.html';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -1530,6 +2017,8 @@ async function exportPNG() {
   const doc = getDoc();
   if (!doc || !doc.body) { showToast('没有可导出的内容'); return; }
   deselectElement();
+  const outlines = editOutlineSheet;
+  showEditOutlines(false);
   showToast('正在生成全页 PNG...');
   try {
     const body = doc.body;
@@ -1554,6 +2043,8 @@ async function exportPNG() {
   } catch(e) {
     showToast('PNG 导出失败: ' + e.message);
     console.error(e);
+  } finally {
+    if (outlines === editOutlineSheet) showEditOutlines();
   }
 }
 
@@ -1561,6 +2052,8 @@ async function composeImage() {
   const doc = getDoc();
   if (!doc || !doc.body) { showToast('没有可合成的内容'); return; }
   deselectElement();
+  const outlines = editOutlineSheet;
+  showEditOutlines(false);
   showToast('正在合成全页图片...');
   try {
     const body = doc.body;
@@ -1585,6 +2078,8 @@ async function composeImage() {
   } catch(e) {
     showToast('合成失败: ' + e.message);
     console.error(e);
+  } finally {
+    if (outlines === editOutlineSheet) showEditOutlines();
   }
 }
 
@@ -1599,9 +2094,10 @@ document.addEventListener('click', (e) => {
 
 function resetAll() {
   if (!selectedElement) return;
-  selectedElement.style.cssText = '';
-  selectedElement.style.transform = '';
-  updatePropsPanel(selectedElement);
+  const el = selectedElement;
+  deselectElement();
+  el.removeAttribute('style');
+  selectElement(el);
   pushUndo();
   showToast('已重置全部样式');
 }
@@ -1621,7 +2117,6 @@ function toggleAddPanel() {
 function addElement(type) {
   const doc = getDoc();
   if (!doc || !doc.body) return;
-  pushUndo();
 
   let el;
   switch (type) {
@@ -1672,6 +2167,7 @@ function addElement(type) {
     }
     autoSizeIframe();
     selectElement(el);
+    pushUndo();
     showToast('已添加');
   }
 
@@ -1681,16 +2177,18 @@ function addElement(type) {
 /* ========================================================================
    KEYBOARD SHORTCUTS
    ======================================================================== */
-document.addEventListener('keydown', (e) => {
-  if (editSavedContent !== null) return;
-  if ((e.ctrlKey||e.metaKey) && e.key==='z' && !e.shiftKey) { e.preventDefault(); undo(); }
-  if ((e.ctrlKey||e.metaKey) && (e.key==='y'||(e.key==='z'&&e.shiftKey))) { e.preventDefault(); redo(); }
-  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); exportFile(); }
+function onShortcut(e) {
+  if (e.key === 'Escape' && _moveData) { e.preventDefault(); finishMove(null, true); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey||e.metaKey) && (e.key.toLowerCase()==='y'||(e.key.toLowerCase()==='z'&&e.shiftKey))) { e.preventDefault(); redo(); }
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s') { e.preventDefault(); saveFile(); }
+  if (editSavedContent !== null || e.target.ownerDocument !== document) return;
   if ((e.key==='Delete'||e.key==='Backspace') && selectedElement && document.activeElement===document.body) {
     e.preventDefault(); deleteSelected();
   }
   if (e.key==='Escape') { deselectElement(); document.getElementById('addPanel').classList.remove('show'); }
-});
+}
+document.addEventListener('keydown', onShortcut);
 
 /* ========================================================================
    HELPERS
@@ -1749,24 +2247,32 @@ document.getElementById('propsBody').addEventListener('mousedown', (e) => {
 
 // Redundant — onDragUp already registered above; kept as comment for clarity
 
-// beforeunload warning
+// File writes are asynchronous; keep the tab open until pending edits reach disk.
 window.addEventListener('beforeunload', (e) => {
-  if (undoStack.length > 0) { e.preventDefault(); e.returnValue = ''; }
+  finishEditing();
+  if (fileOperations || historyHTML !== savedHTML) { e.preventDefault(); e.returnValue = ''; }
 });
+document.getElementById('propsBody').addEventListener('input', scheduleSave);
 
 /* ========================================================================
    INIT & TRANSITIONS
    ======================================================================== */
 let hasLoadedDocument = false;
 
-async function startEditing(htmlString) {
+async function startEditing(htmlString, handle = null, name = 'index.html') {
+  deselectElement();
+  editSavedContent = null;
   document.getElementById('welcomeScreen').classList.add('hidden');
   document.getElementById('canvasIframe').classList.remove('canvas-hidden');
   document.getElementById('editorTools').style.display = 'flex';
   await loadHTML(htmlString);
-  hasLoadedDocument = true;
+  sourceFileHandle = handle;
+  sourceFileName = name;
+  sourceHTML = htmlString;
+  historyHTML = savedHTML = getDocHTML();
   undoStack = []; redoStack = [];
   updateUndoRedoButtons();
+  setSaveStatus(handle ? '源文件已关联 · 每 3 秒检查更新' : '请点击“保存”关联源文件');
   showToast('已加载');
 }
 
@@ -1783,14 +2289,11 @@ document.addEventListener('transitionend', (e) => {
    ======================================================================== */
 function loadSample() {
   const sampleHTML = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  body{font-family:Inter,system-ui,sans-serif;max-width:680px;margin:60px auto;padding:0 24px;color:#1a1a1a;background:#fff;line-height:1.7}\n  h1{font-size:36px;font-weight:700;letter-spacing:-.03em;margin-bottom:8px}\n  .sub{font-size:18px;color:#666;margin-bottom:40px}\n  .card{background:#f9f9f7;border-radius:20px;padding:28px;margin:24px 0;border:1px solid #eee}\n  .card h2{font-size:20px;margin:0 0 12px}\n  .card p{color:#555;margin:0}\n  .btn{display:inline-block;padding:12px 28px;background:#111;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer}\n  img{max-width:100%;border-radius:16px;margin:16px 0}\n</style>\n</head>\n<body>\n<h1>欢迎使用 HTML 编辑器</h1>\n<p class="sub">点击任意元素开始编辑，就像在修改设计稿</p>\n<div class="card">\n<h2>可视化编辑</h2>\n<p>选中元素后拖拽手柄调整大小，双击文字直接编辑，右侧面板精细调校样式。</p>\n</div>\n<p>这是一段可编辑的<strong>文本段落</strong>。你可以点击它，然后再次点击来放置光标进行编辑。</p>\n<button class="btn">示例按钮</button>\n</body>\n</html>';
-  startEditing(sampleHTML);
+  loadFile(new File([sampleHTML], 'sample.html', { type: 'text/html' }));
 }
 
-function init() {
-  updateUndoRedoButtons();
-}
-
-init();
+updateUndoRedoButtons();
+setInterval(syncSource, 3000);
 </script>
 </body>
 </html>
